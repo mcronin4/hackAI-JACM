@@ -3,6 +3,7 @@ anyio==4.9.0
 cachetools==5.5.2
 certifi==2025.6.15
 charset-normalizer==3.4.2
+fastapi==0.104.1
 filetype==1.2.0
 google-ai-generativelanguage==0.6.15
 google-api-core==2.25.1
@@ -53,6 +54,9 @@ typing-inspection==0.4.1
 typing_extensions==4.14.0
 uritemplate==4.2.0
 urllib3==2.5.0
+uvicorn==0.24.0
 websockets==15.0.1
 xxhash==3.5.0
+yt-dlp==2024.6.13
 zstandard==0.23.0
+deepgram-sdk==3.4.0

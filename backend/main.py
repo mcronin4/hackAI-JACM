@@ -7,6 +7,10 @@ import time
 from contextlib import asynccontextmanager
 import google.generativeai as genai  # For Gemini API
 from langgraph.graph import StateGraph  # For workflow
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
