@@ -25,7 +25,7 @@ class EmotionTargetingAgent:
             "justify_failures": "Justify Their Failures - Validate struggles, provide external explanations, remove self-blame",
             "allay_fears": "Allay Their Fears - Provide reassurance, reduce anxiety, offer safety and security",
             "confirm_suspicions": "Confirm Their Suspicions - Validate existing doubts, provide 'I knew it!' moments",
-            "throw_rocks_enemies": "Throw Rocks at Their Enemies - Identify common adversaries, shared frustrations, us-vs-them"
+            "unite_against_challenges": "Unite Against Common Challenges - Identify shared obstacles, mutual frustrations, collective concerns"
         }
     
     def _build_graph(self) -> StateGraph:
