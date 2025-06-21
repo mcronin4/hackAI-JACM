@@ -1,7 +1,7 @@
 from typing import Dict, List, Any, TypedDict
 from langgraph.graph import StateGraph, END
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.schema import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 import json
 import re
 from datetime import datetime
@@ -85,12 +85,13 @@ Return your response as a JSON object with this structure:
 
 Analyze this topic and determine the best emotion theme for marketing this content."""
                 
-                messages = [
-                    SystemMessage(content=system_prompt),
-                    HumanMessage(content=user_prompt)
-                ]
-                
-                response = self.llm.invoke(messages)
+                try:
+                    # Use a more direct approach to avoid message formatting issues
+                    full_prompt = f"{system_prompt}\n\nUser Query:\n{user_prompt}"
+                    response = self.llm.invoke([HumanMessage(content=full_prompt)])
+                except Exception as api_error:
+                    # Fallback: try with just the user prompt
+                    response = self.llm.invoke([HumanMessage(content=user_prompt)])
                 
                 # Parse the JSON response
                 try:

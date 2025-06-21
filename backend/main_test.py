@@ -70,6 +70,8 @@ def test_emotion_targeting():
         print("🔄 Analyzing emotions with Gemini API...")
         emotion_result = emotion_agent.analyze_emotions(mock_topics)
         
+        print(emotion_result)
+
         if emotion_result['success']:
             print(f"✅ Analysis completed successfully!")
             print(f"📊 Analyzed {emotion_result['total_analyzed']} topics")
