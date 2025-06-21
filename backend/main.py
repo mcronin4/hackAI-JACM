@@ -5,6 +5,8 @@ from app.api.routes import router
 import logging
 import time
 from contextlib import asynccontextmanager
+import google.generativeai as genai  # For Gemini API
+from langgraph.graph import StateGraph  # For workflow
 
 # Configure logging
 logging.basicConfig(
