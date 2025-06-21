@@ -1,0 +1,200 @@
+from typing import Dict, List, Any, TypedDict
+from langgraph.graph import StateGraph, END
+from langchain_openai import ChatOpenAI
+from langchain.schema import HumanMessage, SystemMessage
+import json
+import re
+from datetime import datetime
+
+
+class TopicExtractionState(TypedDict):
+    text: str
+    max_topics: int
+    topics: List[Dict[str, Any]]
+    processing_time: float
+    error: str
+
+
+class TopicExtractorAgent:
+    def __init__(self, model_name: str = "gpt-3.5-turbo", temperature: float = 0.1):
+        self.llm = ChatOpenAI(model_name=model_name, temperature=temperature)
+        self.graph = self._build_graph()
+    
+    def _build_graph(self) -> StateGraph:
+        """Build the LangGraph workflow for topic extraction"""
+        workflow = StateGraph(TopicExtractionState)
+        
+        # Add nodes
+        workflow.add_node("extract_topics", self._extract_topics_node)
+        workflow.add_node("validate_topics", self._validate_topics_node)
+        workflow.add_node("format_response", self._format_response_node)
+        
+        # Add edges
+        workflow.set_entry_point("extract_topics")
+        workflow.add_edge("extract_topics", "validate_topics")
+        workflow.add_edge("validate_topics", "format_response")
+        workflow.add_edge("format_response", END)
+        
+        return workflow.compile()
+    
+    def _extract_topics_node(self, state: TopicExtractionState) -> TopicExtractionState:
+        """Extract topics from the input text using LLM"""
+        try:
+            system_prompt = """You are an expert topic extraction agent. Your task is to:
+1. Analyze the given text and identify distinct topics
+2. For each topic, provide:
+   - A clear, concise topic name
+   - A relevant excerpt from the text that demonstrates this topic
+   - A confidence score (0.0 to 1.0) for how well this topic is represented
+
+Guidelines:
+- Extract between 1 and {max_topics} topics
+- Each topic should be distinct and meaningful
+- Excerpts should be 1-3 sentences that best represent the topic
+- Topics should cover the main themes and subjects in the text
+- Avoid overlapping or redundant topics
+
+Return your response as a JSON array with the following structure:
+[
+  {{
+    "topic_name": "string",
+    "content_excerpt": "string", 
+    "confidence_score": float
+  }}
+]"""
+
+            user_prompt = f"Please extract topics from the following text:\n\n{state['text']}"
+            
+            messages = [
+                SystemMessage(content=system_prompt.format(max_topics=state['max_topics'])),
+                HumanMessage(content=user_prompt)
+            ]
+            
+            response = self.llm.invoke(messages)
+            
+            # Parse the JSON response
+            try:
+                topics_data = json.loads(response.content)
+                if not isinstance(topics_data, list):
+                    raise ValueError("Response is not a list")
+                
+                # Add topic IDs
+                topics_with_ids = []
+                for i, topic in enumerate(topics_data, 1):
+                    topic['topic_id'] = i
+                    topics_with_ids.append(topic)
+                
+                state['topics'] = topics_with_ids
+                
+            except json.JSONDecodeError:
+                # Fallback: try to extract JSON from the response
+                json_match = re.search(r'\[.*\]', response.content, re.DOTALL)
+                if json_match:
+                    topics_data = json.loads(json_match.group())
+                    topics_with_ids = []
+                    for i, topic in enumerate(topics_data, 1):
+                        topic['topic_id'] = i
+                        topics_with_ids.append(topic)
+                    state['topics'] = topics_with_ids
+                else:
+                    raise ValueError("Could not parse JSON response from LLM")
+                    
+        except Exception as e:
+            state['error'] = f"Error in topic extraction: {str(e)}"
+            state['topics'] = []
+        
+        return state
+    
+    def _validate_topics_node(self, state: TopicExtractionState) -> TopicExtractionState:
+        """Validate and clean up extracted topics"""
+        if state.get('error'):
+            return state
+        
+        try:
+            validated_topics = []
+            for topic in state['topics']:
+                # Ensure required fields exist
+                if not all(key in topic for key in ['topic_id', 'topic_name', 'content_excerpt']):
+                    continue
+                
+                # Clean and validate topic data
+                validated_topic = {
+                    'topic_id': int(topic['topic_id']),
+                    'topic_name': str(topic['topic_name']).strip(),
+                    'content_excerpt': str(topic['content_excerpt']).strip(),
+                    'confidence_score': float(topic.get('confidence_score', 0.8))
+                }
+                
+                # Skip if topic name or excerpt is empty
+                if not validated_topic['topic_name'] or not validated_topic['content_excerpt']:
+                    continue
+                
+                validated_topics.append(validated_topic)
+            
+            # Limit to max_topics
+            state['topics'] = validated_topics[:state['max_topics']]
+            
+        except Exception as e:
+            state['error'] = f"Error in topic validation: {str(e)}"
+            state['topics'] = []
+        
+        return state
+    
+    def _format_response_node(self, state: TopicExtractionState) -> TopicExtractionState:
+        """Format the final response"""
+        if state.get('error'):
+            return state
+        
+        # Calculate processing time if not already set
+        if 'processing_time' not in state:
+            state['processing_time'] = 0.0
+        
+        return state
+    
+    def extract_topics(self, text: str, max_topics: int = 10) -> Dict[str, Any]:
+        """Main method to extract topics from text"""
+        start_time = datetime.now()
+        
+        initial_state = TopicExtractionState(
+            text=text,
+            max_topics=max_topics,
+            topics=[],
+            processing_time=0.0,
+            error=""
+        )
+        
+        try:
+            result = self.graph.invoke(initial_state)
+            
+            # Calculate processing time
+            end_time = datetime.now()
+            processing_time = (end_time - start_time).total_seconds()
+            
+            if result.get('error'):
+                return {
+                    'success': False,
+                    'error': result['error'],
+                    'topics': [],
+                    'total_topics': 0,
+                    'processing_time': processing_time
+                }
+            
+            return {
+                'success': True,
+                'topics': result['topics'],
+                'total_topics': len(result['topics']),
+                'processing_time': processing_time,
+                'error': None
+            }
+            
+        except Exception as e:
+            end_time = datetime.now()
+            processing_time = (end_time - start_time).total_seconds()
+            
+            return {
+                'success': False,
+                'error': f"Graph execution error: {str(e)}",
+                'topics': [],
+                'total_topics': 0,
+                'processing_time': processing_time
+            } 
