@@ -174,7 +174,6 @@ async def health_check(
             }
         )
 
-
 @router.get(
     "/topics/example",
     summary="Get example response",
