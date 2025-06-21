@@ -23,4 +23,13 @@ class TopicExtractionResponse(BaseModel):
 
 class ErrorResponse(BaseModel):
     error: str = Field(..., description="Error message")
-    detail: Optional[str] = Field(None, description="Additional error details") 
+    detail: Optional[str] = Field(None, description="Additional error details")
+
+
+# Import social media models
+from .social_media.models import (
+    PlatformPostRequest,
+    PlatformPostResponse,
+    PlatformStatusResponse,
+    AllPlatformsStatusResponse
+) 
