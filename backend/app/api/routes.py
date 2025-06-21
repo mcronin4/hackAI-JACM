@@ -2,9 +2,16 @@ from fastapi import APIRouter, HTTPException, Depends
 from app.models import (
     TopicExtractionRequest, 
     TopicExtractionResponse, 
-    ErrorResponse
+    ErrorResponse,
+    PlatformPostRequest,
+    PlatformPostResponse,
+    PlatformStatusResponse,
+    AllPlatformsStatusResponse
 )
 from app.services.topic_service import TopicExtractionService, TopicExtractionError
+from app.services.social_posting_service import SocialPostingService
+from app.services.social_media.base_platform import PostRequest
+from app.services.social_media.platform_factory import PlatformFactory
 from typing import Dict, Any
 import logging
 
@@ -18,6 +25,11 @@ router = APIRouter(prefix="/api/v1", tags=["topic-extraction"])
 def get_topic_service() -> TopicExtractionService:
     """Dependency injection for topic extraction service"""
     return TopicExtractionService()
+
+
+def get_social_posting_service() -> SocialPostingService:
+    """Dependency injection for social posting service"""
+    return SocialPostingService()
 
 
 @router.post(
@@ -136,4 +148,125 @@ async def get_example_response() -> TopicExtractionResponse:
         topics=example_topics,
         total_topics=3,
         processing_time=1.23
-    ) 
+    )
+
+
+# Social Media Posting Endpoints
+
+@router.post(
+    "/post/{platform}",
+    response_model=PlatformPostResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse}
+    },
+    summary="Post to specific social media platform",
+    description="Post content to a specific social media platform (twitter, linkedin, etc.)"
+)
+async def post_to_platform(
+    platform: str,
+    request: PlatformPostRequest,
+    posting_service: SocialPostingService = Depends(get_social_posting_service)
+) -> PlatformPostResponse:
+    """
+    Post content to a specific social media platform.
+    
+    Supported platforms:
+    - twitter: Post tweets (280 character limit)
+    - linkedin: Post to LinkedIn feed (3000 character limit)
+    """
+    try:
+        logger.info(f"Posting to {platform} with content length: {len(request.content)}")
+        
+        post_request = PostRequest(
+            content=request.content,
+            thread_id=request.thread_id
+        )
+        
+        result = await posting_service.post_to_platform(platform, post_request)
+        
+        if result.success:
+            logger.info(f"Successfully posted to {platform}. Post ID: {result.post_id}")
+        else:
+            logger.error(f"Failed to post to {platform}: {result.error}")
+        
+        return PlatformPostResponse(
+            success=result.success,
+            platform=result.platform,
+            post_id=result.post_id,
+            post_url=result.post_url,
+            error=result.error,
+            posted_at=result.posted_at
+        )
+        
+    except Exception as e:
+        logger.error(f"Unexpected error posting to {platform}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Internal server error",
+                "detail": "An unexpected error occurred during posting"
+            }
+        )
+
+
+@router.get(
+    "/platforms",
+    summary="Get supported platforms",
+    description="Get list of all supported social media platforms"
+)
+async def get_supported_platforms():
+    """Get list of supported social media platforms"""
+    return {
+        "platforms": PlatformFactory.get_supported_platforms(),
+        "total": len(PlatformFactory.get_supported_platforms())
+    }
+
+
+@router.get(
+    "/platforms/{platform}/status",
+    response_model=PlatformStatusResponse,
+    summary="Get platform status",
+    description="Get configuration and credential status for a specific platform"
+)
+async def get_platform_status(
+    platform: str,
+    posting_service: SocialPostingService = Depends(get_social_posting_service)
+) -> PlatformStatusResponse:
+    """Get status information for a specific platform"""
+    try:
+        status = posting_service.get_platform_status(platform)
+        return PlatformStatusResponse(**status)
+    except Exception as e:
+        logger.error(f"Error getting status for {platform}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Internal server error",
+                "detail": "An unexpected error occurred getting platform status"
+            }
+        )
+
+
+@router.get(
+    "/platforms/status",
+    response_model=AllPlatformsStatusResponse,
+    summary="Get all platforms status",
+    description="Get configuration and credential status for all supported platforms"
+)
+async def get_all_platforms_status(
+    posting_service: SocialPostingService = Depends(get_social_posting_service)
+) -> AllPlatformsStatusResponse:
+    """Get status information for all supported platforms"""
+    try:
+        status = posting_service.get_all_platforms_status()
+        return AllPlatformsStatusResponse(platforms=status)
+    except Exception as e:
+        logger.error(f"Error getting platforms status: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Internal server error",
+                "detail": "An unexpected error occurred getting platforms status"
+            }
+        ) 
