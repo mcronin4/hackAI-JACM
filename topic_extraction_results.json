@@ -1,0 +1,41 @@
+{
+  "test_info": {
+    "agent_type": "TopicExtractorAgent",
+    "model": "gemini-1.5-flash",
+    "temperature": 0.1,
+    "timestamp": "2.184125"
+  },
+  "input_text": "Renewable energy sources are becoming increasingly important in the global energy mix. \n    Solar power, harnessed through photovoltaic panels, converts sunlight directly into electricity. \n    Wind energy uses turbines to capture kinetic energy from moving air masses. \n    Hydroelectric power generates electricity from flowing water in rivers and dams. \n    Geothermal energy taps into the Earth's internal heat for power generation. \n    These renewable sources offer sustainable alternatives to fossil fuels, reducing greenhouse gas emissions. \n    However, renewable energy faces challenges including intermittency, storage limitations, and infrastructure costs. \n    Battery technology is advancing rapidly to address energy storage needs for renewable systems.",
+  "extraction_results": {
+    "success": true,
+    "topics": [
+      {
+        "topic_id": 1,
+        "topic_name": "Renewable Energy Sources",
+        "content_excerpt": "Renewable energy sources are becoming increasingly important in the global energy mix. Solar power, harnessed through photovoltaic panels, converts sunlight directly into electricity. Wind energy uses turbines to capture kinetic energy from moving air masses. Hydroelectric power generates electricity from flowing water in rivers and dams. Geothermal energy taps into the Earth's internal heat for power generation.",
+        "confidence_score": 0.98
+      },
+      {
+        "topic_id": 2,
+        "topic_name": "Sustainability and Emission Reduction",
+        "content_excerpt": "These renewable sources offer sustainable alternatives to fossil fuels, reducing greenhouse gas emissions.",
+        "confidence_score": 0.95
+      },
+      {
+        "topic_id": 3,
+        "topic_name": "Challenges of Renewable Energy",
+        "content_excerpt": "However, renewable energy faces challenges including intermittency, storage limitations, and infrastructure costs.",
+        "confidence_score": 0.97
+      },
+      {
+        "topic_id": 4,
+        "topic_name": "Energy Storage Solutions",
+        "content_excerpt": "Battery technology is advancing rapidly to address energy storage needs for renewable systems.",
+        "confidence_score": 0.96
+      }
+    ],
+    "total_topics": 4,
+    "processing_time": 2.184125,
+    "error": null
+  }
+}
