@@ -26,24 +26,15 @@ class ErrorResponse(BaseModel):
 
 
 # YouTube Conversion Models
-class YouTubeConversionRequest(BaseModel):
-    url: str = Field(..., description="YouTube video URL to convert to MP3")
+class YouTubeProcessRequest(BaseModel):
+    url: str = Field(..., description="The YouTube video URL to be processed.")
 
-
-class AudioStream(BaseModel):
-    url: Optional[str] = Field(None, description="Direct download URL for the audio file")
-    quality: Optional[str] = Field(None, description="Audio quality (e.g., 128kbps, 320kbps)")
-    format: Optional[str] = Field(None, description="Audio format (e.g., mp3, m4a)")
-    size: Optional[str] = Field(None, description="File size in bytes or human-readable format")
-
-
-class YouTubeConversionResponse(BaseModel):
-    success: bool = Field(..., description="Whether the conversion was successful")
-    video_id: Optional[str] = Field(None, description="YouTube video ID")
-    video_title: Optional[str] = Field(None, description="Title of the YouTube video")
-    video_duration: Optional[str] = Field(None, description="Duration of the video")
-    audio_stream: Optional[AudioStream] = Field(None, description="Audio stream information")
-    transcript: Optional[str] = Field(None, description="The full transcript of the video audio")
-    processing_time: float = Field(..., description="Time taken to process the request in seconds")
-    timestamp: str = Field(..., description="ISO timestamp of when the request was processed")
-    error: Optional[str] = Field(None, description="Error message if conversion failed") 
+class YouTubeProcessResponse(BaseModel):
+    success: bool = Field(..., description="Indicates if the entire process was successful.")
+    video_id: Optional[str] = Field(None, description="The unique identifier for the YouTube video.")
+    video_title: Optional[str] = Field(None, description="The title of the YouTube video.")
+    video_duration: Optional[int] = Field(None, description="The duration of the video in seconds.")
+    mp3_file_path: Optional[str] = Field(None, description="The local server path to the downloaded MP3 file.")
+    transcript: Optional[str] = Field(None, description="The full, AI-generated transcript of the video's audio.")
+    processing_time_seconds: float = Field(..., description="Total time taken for the entire process.")
+    error_message: Optional[str] = Field(None, description="Details of any error that occurred.") 

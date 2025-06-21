@@ -3,8 +3,8 @@ from app.models import (
     TopicExtractionRequest, 
     TopicExtractionResponse, 
     ErrorResponse,
-    YouTubeConversionRequest,
-    YouTubeConversionResponse
+    YouTubeProcessRequest,
+    YouTubeProcessResponse
 )
 from app.services.topic_service import TopicExtractionService, TopicExtractionError
 from app.services.youtube_service import YouTubeService, YouTubeConversionError
@@ -17,16 +17,13 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["topic-extraction"])
 
-
 def get_topic_service() -> TopicExtractionService:
     """Dependency injection for topic extraction service"""
     return TopicExtractionService()
 
-
 def get_youtube_service() -> YouTubeService:
     """Dependency injection for YouTube conversion service"""
     return YouTubeService()
-
 
 @router.post(
     "/extract-topics",
@@ -83,108 +80,71 @@ async def extract_topics(
 
 
 @router.post(
-    "/youtube/convert",
-    response_model=YouTubeConversionResponse,
+    "/youtube/process",
+    response_model=YouTubeProcessResponse,
     responses={
-        400: {"model": ErrorResponse},
-        500: {"model": ErrorResponse}
+        400: {"model": ErrorResponse, "description": "Invalid YouTube URL or processing failed"},
+        500: {"model": ErrorResponse, "description": "Internal server error"}
     },
-    summary="Convert YouTube video to MP3",
-    description="Convert YouTube video to MP3 format using RapidAPI"
+    summary="Process YouTube Video to Audio and Transcript",
+    description="Accepts a YouTube URL, downloads the audio, converts it to MP3, and generates a transcript."
 )
-async def convert_youtube_to_mp3(
-    request: YouTubeConversionRequest,
+async def process_youtube_video(
+    request: YouTubeProcessRequest,
     youtube_service: YouTubeService = Depends(get_youtube_service)
-) -> YouTubeConversionResponse:
+) -> YouTubeProcessResponse:
     """
-    Convert YouTube video to MP3 format.
-    
-    The service will:
-    - Extract video ID from the URL
-    - Get video information using RapidAPI
-    - Find the best audio stream
-    - Return download link and metadata
+    This endpoint orchestrates the entire process:
+    1.  Takes a YouTube URL.
+    2.  Uses `yt-dlp` to download the best audio stream.
+    3.  Converts the audio to an MP3 file.
+    4.  Uses Deepgram to transcribe the MP3.
+    5.  Returns the transcript and other metadata.
     """
     try:
-        logger.info(f"Processing YouTube conversion request for URL: {request.url}")
+        logger.info(f"Received request to process YouTube URL: {request.url}")
         
+        # The youtube_service.convert_to_mp3 now handles the entire pipeline
         result = youtube_service.convert_to_mp3(request.url)
         
-        if not result["success"]:
-            raise YouTubeConversionError(result["error"])
-        
-        logger.info(f"Successfully converted video: {result['video_title']}")
-        
-        # Convert to Pydantic model
-        from app.models import AudioStream
-        
-        audio_stream = None
-        if result["audio_stream"]:
-            audio_stream = AudioStream(
-                url=result["audio_stream"].get("url"),
-                quality=result["audio_stream"].get("quality"),
-                format=result["audio_stream"].get("format"),
-                size=result["audio_stream"].get("size")
+        if not result.get("success"):
+            # Raise an HTTPException to be caught and returned as a proper error response
+            raise HTTPException(
+                status_code=400,
+                detail=result.get("error", "An unknown error occurred during processing.")
             )
+
+        logger.info(f"Successfully processed video: {result.get('video_title')}")
         
-        return YouTubeConversionResponse(
-            success=result["success"],
-            video_id=result["video_id"],
-            video_title=result["video_title"],
-            video_duration=result["video_duration"],
-            audio_stream=audio_stream,
+        return YouTubeProcessResponse(
+            success=True,
+            video_id=result.get("video_id"),
+            video_title=result.get("video_title"),
+            video_duration=result.get("video_duration"),
+            mp3_file_path=result.get("audio_stream", {}).get("url"),
             transcript=result.get("transcript"),
-            processing_time=result["processing_time"],
-            timestamp=result["timestamp"],
-            error=result["error"]
+            processing_time_seconds=result.get("processing_time"),
+            error_message=None
         )
         
     except YouTubeConversionError as e:
-        logger.error(f"YouTube conversion error: {str(e)}")
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "error": "YouTube conversion failed",
-                "detail": str(e)
-            }
-        )
+        logger.error(f"A known error occurred during YouTube processing: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Unexpected error in YouTube conversion: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error": "Internal server error",
-                "detail": "An unexpected error occurred during YouTube conversion"
-            }
-        )
+        logger.error(f"An unexpected server error occurred: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal server error occurred.")
 
 
 @router.get(
     "/youtube/status",
-    summary="YouTube service status",
-    description="Check the status of the YouTube conversion service"
+    summary="YouTube Service Status",
+    description="Check the status of the local YouTube processing service (yt-dlp)."
 )
 async def youtube_service_status(
     youtube_service: YouTubeService = Depends(get_youtube_service)
 ) -> Dict[str, Any]:
     """Get the status of the YouTube conversion service"""
-    try:
-        status = youtube_service.get_service_status()
-        return {
-            "status": "healthy",
-            "service": "youtube-conversion-api",
-            "details": status,
-            "timestamp": "2024-01-01T00:00:00Z"
-        }
-    except Exception as e:
-        logger.error(f"YouTube service status check failed: {str(e)}")
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "error": "Service unhealthy",
-                "detail": str(e)
-            }
-        )
+    return youtube_service.get_service_status()
 
 
 @router.get(
@@ -251,28 +211,21 @@ async def get_example_response() -> TopicExtractionResponse:
         processing_time=1.23
     )
 
-
 @router.get(
     "/youtube/example",
     summary="Get YouTube conversion example",
     description="Get an example of the YouTube conversion response format"
 )
-async def get_youtube_example_response() -> YouTubeConversionResponse:
+async def get_youtube_example_response() -> YouTubeProcessResponse:
     """Return an example response to show the expected YouTube conversion format"""
     from app.models import AudioStream
     
-    return YouTubeConversionResponse(
+    return YouTubeProcessResponse(
         success=True,
         video_id="dQw4w9WgXcQ",
         video_title="Rick Astley - Never Gonna Give You Up (Official Music Video)",
         video_duration="3:33",
-        audio_stream=AudioStream(
-            url="https://example.com/audio.mp3",
-            quality="128kbps",
-            format="mp3",
-            size="3.2MB"
-        ),
-        processing_time=2.45,
-        timestamp="2024-01-01T12:00:00Z",
-        error=None
+        mp3_file_path="https://example.com/audio.mp3",
+        processing_time_seconds=2.45,
+        error_message=None
     ) 
