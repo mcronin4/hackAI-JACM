@@ -9,6 +9,8 @@ const XLogo = ({ className }: { className?: string }) => (
   </svg>
 );
 
+const API_URL = 'http://localhost:8000';
+
 function App() {
   const [content, setContent] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -63,6 +65,26 @@ function App() {
     setIsStarted(true);
     setIsProcessing(true);
     setContentBlocks([]);
+
+    const body = {
+      text: content,
+      original_url: 'https://example.com/ai-article',
+      max_topics: 5,
+      target_platforms: ['twitter']
+    };
+    console.log(body);
+    
+    // Send the content to the API
+    fetch(API_URL + '/api/v1/generate-posts', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    })
+      .then(response => response.json())
+      .then(data => console.log('API response:', data))
+      .catch(error => console.error('Error generating posts:', error));
     
     // Add content blocks gradually during processing
     const addBlocksGradually = () => {
@@ -145,6 +167,7 @@ function App() {
   const handleSend = () => {
     // Placeholder for send functionality
     console.log('Sending content:', editingContent);
+   
   };
 
   return (
@@ -165,7 +188,7 @@ function App() {
               {content.trim() && !isStarted && (
                 <button 
                   onClick={handleStart}
-                  className="bg-gradient-to-r from-`teal-600` to-teal-400 text-white px-4 py-2 rounded-lg hover:bg-teal-400 transition-all transform hover:scale-105 flex items-center gap-2 text-sm font-semibold"
+                  className="bg-gradient-to-r from-teal-600 to-teal-400 text-white px-4 py-2 rounded-lg hover:bg-teal-400 transition-all transform hover:scale-105 flex items-center gap-2 text-sm font-semibold"
                 >
                   Start
                   <ArrowRight className="w-4 h-4" />
