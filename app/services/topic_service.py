@@ -10,8 +10,8 @@ load_dotenv()
 class TopicExtractionService:
     def __init__(self):
         # Initialize the agent with configuration from environment
-        model_name = os.getenv("OPENAI_MODEL_NAME", "gpt-3.5-turbo")
-        temperature = float(os.getenv("OPENAI_TEMPERATURE", "0.1"))
+        model_name = os.getenv("GOOGLE_MODEL_NAME", "gemini-2.5-flash")
+        temperature = float(os.getenv("GOOGLE_TEMPERATURE", "0.1"))
         
         self.agent = TopicExtractorAgent(
             model_name=model_name,
@@ -68,7 +68,7 @@ class TopicExtractionService:
         """Get the status of the topic extraction agent"""
         return {
             "status": "ready",
-            "model": self.agent.llm.model_name,
+            "model": self.agent.llm.model,
             "temperature": self.agent.llm.temperature
         }
 

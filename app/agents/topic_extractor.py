@@ -1,6 +1,7 @@
-from typing import Dict, List, Any, TypedDict
+from typing import Dict, List, Any
+from typing_extensions import TypedDict
 from langgraph.graph import StateGraph, END
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.schema import HumanMessage, SystemMessage
 import json
 import re
@@ -16,8 +17,8 @@ class TopicExtractionState(TypedDict):
 
 
 class TopicExtractorAgent:
-    def __init__(self, model_name: str = "gpt-3.5-turbo", temperature: float = 0.1):
-        self.llm = ChatOpenAI(model_name=model_name, temperature=temperature)
+    def __init__(self, model_name: str = "gemini-2.5-flash", temperature: float = 0.1):
+        self.llm = ChatGoogleGenerativeAI(model=model_name, temperature=temperature)
         self.graph = self._build_graph()
     
     def _build_graph(self) -> StateGraph:

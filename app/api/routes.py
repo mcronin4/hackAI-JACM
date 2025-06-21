@@ -2,9 +2,12 @@ from fastapi import APIRouter, HTTPException, Depends
 from app.models import (
     TopicExtractionRequest, 
     TopicExtractionResponse, 
+    ContentGenerationRequest,
+    ContentGenerationResponse,
     ErrorResponse
 )
 from app.services.topic_service import TopicExtractionService, TopicExtractionError
+from app.services.content_service import ContentGenerationService, ContentGenerationError
 from typing import Dict, Any
 import logging
 
@@ -12,12 +15,17 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1", tags=["topic-extraction"])
+router = APIRouter(prefix="/api/v1", tags=["topic-extraction", "content-generation"])
 
 
 def get_topic_service() -> TopicExtractionService:
     """Dependency injection for topic extraction service"""
     return TopicExtractionService()
+
+
+def get_content_service() -> ContentGenerationService:
+    """Dependency injection for content generation service"""
+    return ContentGenerationService()
 
 
 @router.post(
@@ -136,4 +144,135 @@ async def get_example_response() -> TopicExtractionResponse:
         topics=example_topics,
         total_topics=3,
         processing_time=1.23
+    )
+
+
+@router.post(
+    "/generate-content",
+    response_model=ContentGenerationResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse}
+    },
+    summary="Generate social media content from topics",
+    description="Use LangGraph agent to generate platform-specific content from enhanced topics with emotion data"
+)
+async def generate_content(
+    request: ContentGenerationRequest,
+    content_service: ContentGenerationService = Depends(get_content_service)
+) -> ContentGenerationResponse:
+    """
+    Generate social media content from enhanced topics with emotion data.
+    
+    The agent will:
+    - Process each topic independently
+    - Generate platform-specific content (starting with Twitter/X)
+    - Create engaging content based on emotional context
+    - Add relevant hashtags and call-to-action
+    - Include links back to original content
+    """
+    try:
+        logger.info(f"Processing content generation request for {len(request.topics)} topics and {len(request.target_platforms)} platforms")
+        
+        response = await content_service.generate_content(
+            original_text=request.original_text,
+            topics=request.topics,
+            original_url=request.original_url,
+            target_platforms=request.target_platforms
+        )
+        
+        logger.info(f"Successfully generated {response.successful_generations}/{response.total_generated} content pieces")
+        return response
+        
+    except ContentGenerationError as e:
+        logger.error(f"Content generation error: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "Content generation failed",
+                "detail": str(e)
+            }
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in content generation: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Internal server error",
+                "detail": "An unexpected error occurred during content generation"
+            }
+        )
+
+
+@router.get(
+    "/platforms",
+    summary="Get supported platforms",
+    description="Get list of supported social media platforms and their configurations"
+)
+async def get_supported_platforms(
+    content_service: ContentGenerationService = Depends(get_content_service)
+) -> Dict[str, Any]:
+    """Get supported platforms and their configurations"""
+    try:
+        status = content_service.get_agent_status()
+        platforms = {}
+        
+        for platform in status['supported_platforms']:
+            try:
+                config = content_service.get_platform_config(platform)
+                platforms[platform] = config
+            except Exception as e:
+                logger.warning(f"Could not get config for platform {platform}: {str(e)}")
+        
+        return {
+            "platforms": status['supported_platforms'],
+            "supported_platforms": status['supported_platforms'],
+            "platform_configs": platforms,
+            "agent_status": status
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting platform information: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Failed to get platform information",
+                "detail": str(e)
+            }
+        )
+
+
+@router.get(
+    "/content/example",
+    summary="Get example content generation request",
+    description="Get an example of the content generation request format"
+)
+async def get_example_content_request() -> ContentGenerationRequest:
+    """Return an example request to show the expected format"""
+    from app.models import EnhancedTopic
+    
+    example_topics = [
+        EnhancedTopic(
+            topic_id=1,
+            topic_name="Remote Work Productivity Challenges",
+            content_excerpt="Many professionals struggle with distractions when working from home, leading to decreased productivity and increased stress levels.",
+            primary_emotion="Justify Their Failures",
+            emotion_confidence=0.85,
+            reasoning="This topic validates the common struggle with remote work productivity, allowing the audience to feel understood rather than blamed for their challenges."
+        ),
+        EnhancedTopic(
+            topic_id=2,
+            topic_name="AI Tools for Productivity",
+            content_excerpt="Artificial intelligence tools are revolutionizing how we approach daily tasks and workflow optimization.",
+            primary_emotion="Anticipation",
+            emotion_confidence=0.92,
+            reasoning="This topic creates excitement about future possibilities and technological advancement in workplace efficiency."
+        )
+    ]
+    
+    return ContentGenerationRequest(
+        original_text="Long-form article about remote work challenges and AI solutions for modern professionals...",
+        topics=example_topics,
+        original_url="https://example.com/remote-work-ai-productivity",
+        target_platforms=["twitter"]
     ) 

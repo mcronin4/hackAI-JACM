@@ -26,7 +26,7 @@ class TestTopicExtractorAgent:
     @pytest.fixture
     def agent(self, mock_llm):
         """Create agent with mocked LLM"""
-        with patch('app.agents.topic_extractor.ChatOpenAI', return_value=mock_llm):
+        with patch('app.agents.topic_extractor.ChatGoogleGenerativeAI', return_value=mock_llm):
             return TopicExtractorAgent()
     
     def test_agent_initialization(self, agent):
