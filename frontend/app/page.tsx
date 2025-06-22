@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef, Suspense } from 'react';
 import Image from 'next/image';
-import { ArrowRight, Loader2, CheckCircle, X, Send, Copy, FileText, Youtube, Video, FileText as Transcript } from 'lucide-react';
+import { ArrowRight, Loader2, CheckCircle, X, Copy, FileText, Youtube, Video, FileText as Transcript } from 'lucide-react';
 import { useAuthStore } from '@/lib/auth-store';
 import { ProfileDropdown } from '@/components/ProfileDropdown';
 import { useSearchParams } from 'next/navigation';
@@ -596,12 +596,6 @@ function AppContent() {
     }
   };
 
-  const handleSend = () => {
-    // Placeholder for send functionality
-    console.log('Sending content:', editingContent);
-   
-  };
-
   const getPlaceholderText = () => {
     return contentType === 'text' 
       ? 'Paste your content here...' 
@@ -942,7 +936,6 @@ function AppContent() {
                     })
                     .map(platform => {
                       const Icon = platform === 'twitter' ? XLogo : LinkedInLogo;
-                      const platformName = platform === 'twitter' ? 'X' : 'LinkedIn';
                       const platformColor = platform === 'twitter' ? 'text-black' : 'text-blue-600';
                       
                       return (
