@@ -14,7 +14,9 @@ from app.models import (
     PlatformPostRequest,
     PlatformPostResponse,
     PlatformStatusResponse,
-    AllPlatformsStatusResponse
+    AllPlatformsStatusResponse,
+    PlatformPosts,
+    PlatformPost
 )
 from app.services.content_pipeline import ContentPipelineService, ContentPipelineError
 from app.services.topic_service import TopicExtractionService, TopicExtractionError
@@ -257,8 +259,42 @@ async def generate_posts(
         if result['success']:
             logger.info(f"Successfully generated {len(result['generated_posts'])} posts from {result['total_topics']} topics")
             
+            # Create platform-separated posts structure
+            platform_posts = PlatformPosts()
+            
+            # Use the platform_posts from the pipeline service result
+            if 'platform_posts' in result:
+                pipeline_platform_posts = result['platform_posts']
+                
+                # Convert Twitter posts
+                if 'twitter' in pipeline_platform_posts:
+                    for post_data in pipeline_platform_posts['twitter']:
+                        platform_post = PlatformPost(
+                            post_content=post_data.get('post_content', ''),
+                            topic_id=post_data.get('topic_id', 0),
+                            topic_name=post_data.get('topic_name', ''),
+                            primary_emotion=post_data.get('primary_emotion', ''),
+                            content_strategy=post_data.get('content_strategy', 'single_tweet'),
+                            processing_time=post_data.get('processing_time', 0.0)
+                        )
+                        platform_posts.twitter.append(platform_post)
+                
+                # Convert LinkedIn posts
+                if 'linkedin' in pipeline_platform_posts:
+                    for post_data in pipeline_platform_posts['linkedin']:
+                        platform_post = PlatformPost(
+                            post_content=post_data.get('post_content', ''),
+                            topic_id=post_data.get('topic_id', 0),
+                            topic_name=post_data.get('topic_name', ''),
+                            primary_emotion=post_data.get('primary_emotion', ''),
+                            content_strategy=post_data.get('content_strategy', 'professional_post'),
+                            processing_time=post_data.get('processing_time', 0.0)
+                        )
+                        platform_posts.linkedin.append(platform_post)
+            
             return ContentPipelineResponse(
                 success=True,
+                platform_posts=platform_posts,
                 generated_posts=result['generated_posts'],
                 total_topics=result['total_topics'],
                 successful_generations=result['successful_generations'],
@@ -270,6 +306,7 @@ async def generate_posts(
             
             return ContentPipelineResponse(
                 success=False,
+                platform_posts=PlatformPosts(),  # Empty platform posts
                 generated_posts=[],
                 total_topics=result['total_topics'],
                 successful_generations=result['successful_generations'],

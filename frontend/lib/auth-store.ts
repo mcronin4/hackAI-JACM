@@ -13,7 +13,7 @@ interface AuthState {
   resetAuthState: () => void
 }
 
-export const useAuthStore = create<AuthState>((set: any, get: any) => ({
+export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isLoggedIn: false,
   isLoading: false,
@@ -23,7 +23,7 @@ export const useAuthStore = create<AuthState>((set: any, get: any) => ({
     
     try {
       // Use Supabase's built-in X OAuth
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      const { error } = await supabase.auth.signInWithOAuth({
         provider: 'twitter',
         options: {
           redirectTo: `${window.location.origin}/auth/callback`
@@ -127,12 +127,12 @@ export const useAuthStore = create<AuthState>((set: any, get: any) => ({
           
           // First, let's test if we can access the table at all
           console.log('Testing database access...')
-          const { data: testData, error: testError } = await supabase
+          const { error: testError } = await supabase
             .from('user_info')
             .select('count')
             .limit(1)
           
-          console.log('Database access test:', { testData, testError })
+          console.log('Database access test:', { testError })
           
           // Prepare the data we're trying to insert
           const userDataToInsert = {

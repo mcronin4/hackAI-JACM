@@ -89,8 +89,16 @@ class ContentGeneratorAgent:
             return state
         
         try:
-            # Always use single_tweet strategy for Twitter
-            state['content_strategy'] = "single_tweet"
+            platform = state['target_platforms'][0]
+            
+            # Platform-specific content strategies
+            if platform.lower() == "twitter":
+                state['content_strategy'] = "single_tweet"
+            elif platform.lower() == "linkedin":
+                state['content_strategy'] = "professional_post"
+            else:
+                # Default fallback
+                state['content_strategy'] = "single_tweet"
             
         except Exception as e:
             state['error'] = f"Error in content strategy: {str(e)}"
@@ -98,7 +106,7 @@ class ContentGeneratorAgent:
         return state
     
     def _content_generation_node(self, state: ContentGenerationState) -> ContentGenerationState:
-        """Generate integrated content with CTA based on topic and emotion"""
+        """Generate integrated content with CTA based on topic, emotion, and platform"""
         if state.get('error'):
             return state
         
@@ -106,13 +114,53 @@ class ContentGeneratorAgent:
             current_topic = state['current_topic']
             platform = state['target_platforms'][0]
             config = self.platform_config.get_config(platform)
+            strategy = state['content_strategy']
             
-            # Twitter shortens URLs to ~23 characters
-            # Target range: 210-240 characters for content
-            min_content_length = 210
-            max_content_length = 240
+            # Platform-specific content length targets
+            if platform.lower() == "twitter":
+                # Twitter: Leave room for URLs (~23 chars) 
+                min_content_length = 210
+                max_content_length = 240
+            elif platform.lower() == "linkedin":
+                # LinkedIn: Use more of the available space for professional content
+                min_content_length = 500
+                max_content_length = 800
+            else:
+                # Default fallback
+                min_content_length = 200
+                max_content_length = 250
             
-            system_prompt = f"""<context>
+            # Create platform-specific system prompt
+            system_prompt = self._create_platform_prompt(
+                state, current_topic, platform, config, strategy, 
+                min_content_length, max_content_length
+            )
+
+            user_prompt = f"Create a complete {platform} post following the structure and requirements provided."
+            
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ]
+            
+            response = self.llm.invoke(messages)
+            
+            # Store the complete content
+            state['generated_content'] = response.content.strip()
+            
+            # CTA is integrated into generated_content
+            state['call_to_action'] = ""
+            
+        except Exception as e:
+            state['error'] = f"Error in content generation: {str(e)}"
+        
+        return state
+    
+    def _create_platform_prompt(self, state: ContentGenerationState, current_topic: Dict[str, Any], 
+                               platform: str, config, strategy: str, min_length: int, max_length: int) -> str:
+        """Create platform-specific prompts for content generation"""
+        
+        base_context = f"""<context>
 
 <originalContent>
 {state['original_text']}
@@ -134,37 +182,41 @@ class ContentGeneratorAgent:
 {current_topic.get('reasoning', 'Emotional targeting for engagement')}
 </reasonForEmotion>
 
-</context>
+<platform>{platform}</platform>
+<contentStrategy>{strategy}</contentStrategy>
+<toneGuidelines>{config.tone_guidelines}</toneGuidelines>
+
+</context>"""
+
+        if strategy == "single_tweet":
+            return base_context + f"""
 
 <prompt>
-You are to create a post based on the context.
+You are creating a Twitter post based on the context.
 
-here is how I would think about creating the post.
+Here's how to approach it:
 
-1. start with the topic or idea. Say the topic is "Be straight with yourself and you'll realize the stuff holding
-   you back is just skills you still need to learn—and that honest moment is what gets you moving."
-2. then connect it to the emotion. Say the emotion is "Encourage Their Dreams". The way to connect this together is
-   to start thinking about how to say the topic in the way that encourages their dreams. Being straight with
-   yourself means that you don't lie. It means that you follow a path that is for you not for someone else. The
-   piece that resonates is being true to yourself. so that is the hook.
-3. Then you think about an example that is actionable. The core ideas of being straight with yourself is often
-   related to varying desires. If we think about the desires that people have, you can think of 1) money, 2) dreams
-   of success, 3) love, 4) companionship. If we though about it generally, it would be money that is a good example.
-4. Finally you'll get to this below:
+1. Start with the core idea and connect it to the emotional alignment
+2. Make it engaging and conversational (Twitter style) 
+3. Use practical examples that resonate
+4. Write in the same style as the originalContent
+5. Create content that drives engagement through questions or relatable scenarios
+6. BE CONCISE - Twitter requires brevity and punch
 
-   If you don't lie to yourself, you'll go down the right path.
+Example approach:
+- Hook: Connect the topic to the emotion in a relatable way
+- Body: Provide a practical example or scenario  
+- Engagement: End in a way that encourages interaction
 
-   People justify why they feel terrible, why they're trapped by money, why they can't get what they want.
+Make sure to write in the same style as the originalContent but KEEP IT BRIEF.
 
-   All of those are problems that can be solved with skill and knowledge. Honesty allows you to start solving them.
-   
-Make sure to write in the same style as the originalContent.
-
-ABSOLUTE REQUIREMENTS:
-- MUST be between {min_content_length}-{max_content_length} characters EXACTLY
-- NEVER exceed {max_content_length} characters - this will break the system
+CRITICAL CHARACTER LIMIT REQUIREMENTS:
+- MUST be between {min_length}-{max_length} characters EXACTLY
+- NEVER exceed {max_length} characters - this will break the system
 - Count every character including spaces and punctuation
 - Do NOT include URLs (they are added separately)
+- Tone: {config.tone_guidelines}
+- PRIORITIZE BREVITY over elaboration - this is Twitter, not an essay
 
 </prompt>
 
@@ -172,31 +224,60 @@ ABSOLUTE REQUIREMENTS:
 [place the content here]
 </structure>"""
 
-            user_prompt = f"Create a complete {platform} post following the structure provided."
-            
-            messages = [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_prompt)
-            ]
-            
-            response = self.llm.invoke(messages)
-            
-            # The response contains the integrated content + CTA
-            complete_content = response.content.strip()
-            
-            # Store the complete content as generated_content
-            state['generated_content'] = complete_content
-            
-            # CTA is integrated into generated_content, set call_to_action to empty for compatibility
-            state['call_to_action'] = ""
-            
-        except Exception as e:
-            state['error'] = f"Error in content generation: {str(e)}"
-        
-        return state
-    
+        elif strategy == "professional_post":
+            return base_context + f"""
 
+<prompt>
+You are creating a LinkedIn post based on the context.
 
+Here's how to approach professional content:
+
+1. Start with the core idea but frame it professionally and thoughtfully
+2. Connect it to the emotional alignment in a way that's appropriate for a professional audience
+3. Provide deeper insights, examples, or actionable advice
+4. Write in the same style as the originalContent but elevated for professional context
+5. Create content that sparks professional discussion and reflection
+
+Structure approach:
+- Opening: Professional hook that connects topic to emotion
+- Development: Deeper exploration with examples or insights
+- Professional insight: Actionable takeaway or thought-provoking conclusion
+
+Make sure to write in the same style as the originalContent but adapted for professional discourse.
+
+ABSOLUTE REQUIREMENTS:
+- MUST be between {min_length}-{max_length} characters EXACTLY
+- NEVER exceed {max_length} characters - this will break the system
+- Count every character including spaces and punctuation
+- Do NOT include URLs (they are added separately)
+- Tone: {config.tone_guidelines}
+- Style: Professional, insightful, and thought-provoking
+
+</prompt>
+
+<structure>
+[place the content here]
+</structure>"""
+
+        else:
+            # Fallback for unknown strategies
+            return base_context + f"""
+
+<prompt>
+Create a {platform} post based on the context provided.
+
+ABSOLUTE REQUIREMENTS:
+- MUST be between {min_length}-{max_length} characters EXACTLY
+- NEVER exceed {max_length} characters
+- Count every character including spaces and punctuation
+- Do NOT include URLs (they are added separately)
+- Tone: {config.tone_guidelines}
+
+</prompt>
+
+<structure>
+[place the content here]
+</structure>"""
     
     def _formatting_node(self, state: ContentGenerationState) -> ContentGenerationState:
         """Format the final post with integrated content+CTA and URL"""
