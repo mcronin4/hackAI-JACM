@@ -27,7 +27,6 @@ export const useAuthStore = create<AuthState>((set: SetState) => ({
     try {
       // Check if X handle already exists
       const { data: existingUser } = await supabase
-      const { data: existingUser } = await supabase
         .from('user_info')
         .select('x_handle')
         .eq('x_handle', xHandle)
@@ -39,7 +38,6 @@ export const useAuthStore = create<AuthState>((set: SetState) => ({
       }
 
       // Check if email already exists
-      const { data: existingEmail } = await supabase
       const { data: existingEmail } = await supabase
         .from('user_info')
         .select('email')
