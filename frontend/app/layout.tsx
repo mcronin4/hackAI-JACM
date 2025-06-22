@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "🔍 Topic Extractor",
-  description: "AI-powered topic extraction and social media posting",
+  title: "Chameleon",
+  description: "Automate your social media marketing with content repurposing",
   icons: {
     icon: '/favicon.ico',
     shortcut: '/favicon-16x16.png',

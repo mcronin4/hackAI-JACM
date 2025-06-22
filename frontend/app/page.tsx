@@ -177,13 +177,24 @@ function App() {
         <div className={`transition-all duration-500 ${isStarted ? 'w-1/2' : 'w-2/3'} flex flex-col min-h-0`}>
           <div className={`transition-all duration-500 ${isStarted ? 'mb-4' : 'mt-32 mb-8'} flex-shrink-0`}>
             <div className="flex items-end justify-between mb-8">
-              <h1 className={`font-bold bg-gradient-to-r from-teal-600 to-teal-400 bg-clip-text text-transparent text-left transition-all duration-500 ${
-                isStarted 
-                  ? 'text-lg' 
-                  : 'text-5xl md:text-6xl'
-              }`}>
-                chameleon
-              </h1>
+              <div className="flex items-center gap-4">
+                <img 
+                  src="/chameleon_logo.png" 
+                  alt="Chameleon Logo" 
+                  className={`transition-all duration-500 ${
+                    isStarted 
+                      ? 'w-8 h-8' 
+                      : 'w-16 h-16 md:w-20 md:h-20'
+                  }`}
+                />
+                <h1 className={`font-bold bg-gradient-to-r from-teal-700 to-green-500 bg-clip-text text-transparent text-left transition-all duration-500 ${
+                  isStarted 
+                    ? 'text-lg' 
+                    : 'text-5xl md:text-6xl'
+                }`}>
+                  chameleon
+                </h1>
+              </div>
               
               {content.trim() && !isStarted && (
                 <button 
