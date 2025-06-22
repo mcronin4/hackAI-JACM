@@ -60,9 +60,9 @@ class ContentGeneratorAgent:
                 state['error'] = "Original text is required"
                 return state
             
+            # Original URL is optional - set to empty string if not provided
             if not state.get('original_url'):
-                state['error'] = "Original URL is required"
-                return state
+                state['original_url'] = ""
             
             # Set current topic (assumes we're processing one topic at a time)
             state['current_topic'] = state['topics'][0]
@@ -227,7 +227,7 @@ ABSOLUTE REQUIREMENTS:
         self, 
         topic: Dict[str, Any], 
         original_text: str, 
-        original_url: str, 
+        original_url: str = "", 
         platform: str = "twitter"
     ) -> Dict[str, Any]:
         """Main method to generate content for a single topic"""

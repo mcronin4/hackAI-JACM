@@ -40,7 +40,7 @@ class ContentPipelineService:
     async def process_content(
         self,
         text: str,
-        original_url: str,
+        original_url: Optional[str] = None,
         target_platforms: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
@@ -48,7 +48,7 @@ class ContentPipelineService:
         
         Args:
             text: The original text to process
-            original_url: URL of the original content
+            original_url: URL of the original content (optional)
             target_platforms: List of target platforms (default: ["twitter"])
             
         Returns:
@@ -61,8 +61,9 @@ class ContentPipelineService:
             if not text or not text.strip():
                 return self._create_error_response("Text cannot be empty", start_time)
             
-            if not original_url or not original_url.strip():
-                return self._create_error_response("Original URL cannot be empty", start_time)
+            # Use empty string as default if no URL provided
+            if not original_url:
+                original_url = ""
             
             if target_platforms is None:
                 target_platforms = ["twitter"]

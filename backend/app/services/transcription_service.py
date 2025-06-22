@@ -19,6 +19,8 @@ class TranscriptionService:
         self.api_key = os.getenv("DEEPGRAM_API_KEY")
         if not self.api_key:
             raise ValueError("DEEPGRAM_API_KEY not found in environment variables.")
+        
+        # Use default client - timeout is handled by httpx at the request level
         self.deepgram_client = DeepgramClient(self.api_key)
 
     def transcribe_audio(self, audio_file_path: str) -> str:
@@ -38,6 +40,10 @@ class TranscriptionService:
             raise TranscriptionError(f"Audio file not found at path: {audio_file_path}")
 
         try:
+            # Get file size for logging
+            file_size = os.path.getsize(audio_file_path)
+            file_size_mb = file_size / (1024 * 1024)
+            
             with open(audio_file_path, "rb") as audio_file:
                 buffer_data = audio_file.read()
 
@@ -45,7 +51,7 @@ class TranscriptionService:
                 "buffer": buffer_data,
             }
 
-            logger.info(f"Sending audio file '{os.path.basename(audio_file_path)}' to Deepgram for transcription...")
+            logger.info(f"Sending audio file '{os.path.basename(audio_file_path)}' ({file_size_mb:.1f} MB) to Deepgram for transcription...")
             # Using the 'nova-2' model for high accuracy
             options = PrerecordedOptions(
                 model="nova-2",
@@ -60,5 +66,13 @@ class TranscriptionService:
             return transcript
 
         except Exception as e:
-            logger.error(f"Deepgram transcription failed: {e}", exc_info=True)
-            raise TranscriptionError(f"Failed to transcribe audio file. Reason: {e}") 
+            error_msg = str(e)
+            if "timeout" in error_msg.lower():
+                logger.error(f"Deepgram transcription timed out for {file_size_mb:.1f} MB file: {e}")
+                raise TranscriptionError(f"Transcription timed out for large file ({file_size_mb:.1f} MB). Try with a shorter video or check your internet connection.")
+            elif "api_key" in error_msg.lower() or "unauthorized" in error_msg.lower():
+                logger.error(f"Deepgram API authentication failed: {e}")
+                raise TranscriptionError("Transcription failed: Invalid or missing Deepgram API key. Please check your DEEPGRAM_API_KEY environment variable.")
+            else:
+                logger.error(f"Deepgram transcription failed: {e}", exc_info=True)
+                raise TranscriptionError(f"Failed to transcribe audio file. Reason: {e}") 

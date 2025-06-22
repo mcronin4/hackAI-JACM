@@ -33,35 +33,12 @@ function App() {
   const [copySuccess, setCopySuccess] = useState(false);
   const [isContentTransitioning, setIsContentTransitioning] = useState(false);
   const [isYoutubeViewTransitioning, setIsYoutubeViewTransitioning] = useState(false);
+  const [actualTranscript, setActualTranscript] = useState<string>('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const youtubeInputRef = useRef<HTMLInputElement>(null);
 
-  const sampleContentBlocks = [
-    "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
-    "Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo. Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit.",
-    "Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. At vero eos et accusamus et iusto odio dignissimos ducimus qui blanditiis praesentium voluptatum deleniti atque corrupti quos dolores et quas molestias excepturi sint occaecati cupiditate non provident, similique sunt in culpa qui officia deserunt mollitia animi.",
-    "Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Temporibus autem quibusdam et aut officiis debitis aut rerum necessitatibus saepe eveniet ut et voluptates repudiandae sint et molestiae non recusandae. Itaque earum rerum hic tenetur a sapiente delectus.",
-    "Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium. Nam libero tempore, cum soluta nobis est eligendi optio cumque nihil impedit quo minus id quod maxime placeat facere possimus, omnis voluptas assumenda est, omnis dolor repellendus.",
-    "Totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt. Et harum quidem rerum facilis est et expedita distinctio. Nam libero tempore, cum soluta nobis est eligendi optio cumque nihil impedit quo minus id quod maxime placeat facere possimus.",
-    "Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores. Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit, sed quia non numquam eius modi tempora incidunt ut labore et dolore magnam aliquam quaerat voluptatem.",
-    "Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit. Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis suscipit laboriosam, nisi ut aliquid ex ea commodi consequatur? Quis autem vel eum iure reprehenderit qui in ea voluptate velit esse quam nihil molestiae consequatur.",
-    "At vero eos et accusamus et iusto odio dignissimos ducimus qui blanditiis praesentium voluptatum deleniti atque corrupti. Vel illum qui dolorem eum fugiat quo voluptas nulla pariatur? At vero eos et accusamus et iusto odio dignissimos ducimus qui blanditiis praesentium voluptatum deleniti atque corrupti quos dolores.",
-    "Et harum quidem rerum facilis est et expedita distinctio. Nam libero tempore, cum soluta nobis est eligendi optio. Temporibus autem quibusdam et aut officiis debitis aut rerum necessitatibus saepe eveniet ut et voluptates repudiandae sint et molestiae non recusandae.",
-    "Temporibus autem quibusdam et aut officiis debitis aut rerum necessitatibus saepe eveniet ut et voluptates repudiandae. Itaque earum rerum hic tenetur a sapiente delectus, ut aut reiciendis voluptatibus maiores alias consequatur aut perferendis doloribus asperiores repellat.",
-    "Itaque earum rerum hic tenetur a sapiente delectus, ut aut reiciendis voluptatibus maiores alias consequatur aut perferendis. Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis."
-  ];
 
-  // Sample transcript text for YouTube videos
-  const sampleTranscript = `Welcome to this comprehensive guide on artificial intelligence and machine learning. In today's rapidly evolving technological landscape, understanding these concepts has become more crucial than ever before.
-
-Artificial intelligence, commonly referred to as AI, represents a broad field of computer science focused on creating systems capable of performing tasks that typically require human intelligence. These tasks include learning, reasoning, problem-solving, perception, and language understanding.
-
-Machine learning, a subset of AI, involves the development of algorithms and statistical models that enable computer systems to improve their performance on a specific task through experience, without being explicitly programmed for every scenario.
-
-The applications of AI and machine learning are vast and continue to expand across various industries. From healthcare and finance to transportation and entertainment, these technologies are revolutionizing how we work, live, and interact with the world around us.
-
-As we delve deeper into this topic, we'll explore the fundamental concepts, practical applications, and future implications of these transformative technologies. Whether you're a beginner looking to understand the basics or a professional seeking to enhance your knowledge, this guide will provide valuable insights into the world of artificial intelligence and machine learning.`;
 
   // Handle escape key to close expanded post
   useEffect(() => {
@@ -94,20 +71,32 @@ As we delve deeper into this topic, we'll explore the fundamental concepts, prac
         setIsContentTransitioning(false);
       }, 150);
     }
-  }, [contentType]);
+  }, [contentType, content]);
 
   // Helper function to start post generation (used after transcript is ready)
-  const startPostGeneration = () => {
+  const startPostGeneration = (transcriptText?: string, youtubeUrl?: string) => {
     setIsProcessing(true);
     setContentBlocks([]);
 
-    const body = {
-      text: content,
-      original_url: contentType === 'youtube' ? content : 'https://example.com/ai-article',
-      max_topics: 5,
+    // Use transcript text if provided, otherwise use the content from the text box
+    const textToProcess = transcriptText || content;
+    
+    // Build request body
+    const body: {
+      text: string;
+      target_platforms: string[];
+      original_url?: string;
+    } = {
+      text: textToProcess,
       target_platforms: ['twitter']
     };
-    console.log(body);
+    
+    // Add original_url if we have a YouTube URL
+    if (youtubeUrl) {
+      body.original_url = youtubeUrl;
+    }
+    
+    console.log('Sending post generation request:', body);
     
     // Send the content to the API
     fetch(API_URL + '/api/v1/generate-posts', {
@@ -117,47 +106,115 @@ As we delve deeper into this topic, we'll explore the fundamental concepts, prac
       },
       body: JSON.stringify(body)
     })
-      .then(response => response.json())
-      .then(data => console.log('API response:', data))
-      .catch(error => console.error('Error generating posts:', error));
-    
-    // Add content blocks gradually during processing
-    const addBlocksGradually = () => {
-      let blockIndex = 0;
-      const interval = setInterval(() => {
-        if (blockIndex < sampleContentBlocks.length) {
-          setContentBlocks(prev => [...prev, sampleContentBlocks[blockIndex]]);
-          blockIndex++;
-        } else {
-          clearInterval(interval);
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
         }
-      }, 600); // Add a new block every 600ms
-
-      // Complete processing after 8 seconds (to show more blocks)
-      setTimeout(() => {
+        return response.json();
+      })
+      .then(data => {
+        console.log('Post generation API response:', data);
+        
+        if (data.success && data.generated_posts) {
+          // Set the actual generated posts from the API
+          setContentBlocks(data.generated_posts);
+          setIsProcessing(false);
+          setIsComplete(true);
+        } else {
+          // Handle API errors
+          console.error('API returned error:', data.error);
+          setContentBlocks(['Error: Failed to generate posts. Please try again.']);
+          setIsProcessing(false);
+          setIsComplete(false);
+        }
+      })
+      .catch(error => {
+        console.error('Error generating posts:', error);
+        setContentBlocks(['Error: Unable to connect to the server. Please check if the backend is running.']);
         setIsProcessing(false);
-        setIsComplete(true);
-        clearInterval(interval);
-      }, 8000);
-    };
-
-    addBlocksGradually();
+        setIsComplete(false);
+      });
   };
 
   const handleStart = () => {
     setIsStarted(true);
 
     if (contentType === 'youtube') {
-      // For YouTube content, first load transcript (5 seconds), then start post generation
+      // Validate YouTube URL first
+      if (!content.trim() || !extractYouTubeId(content)) {
+        setContentBlocks(['Error: Please enter a valid YouTube URL.']);
+        setIsProcessing(false);
+        setIsComplete(false);
+        return;
+      }
+      
+      // For YouTube content, first get transcript, then generate posts
       setIsTranscriptLoading(true);
       
-      // Simulate transcript loading for 5 seconds
-      setTimeout(() => {
-        setIsTranscriptLoading(false);
-        // After transcript is loaded, start post generation
-        startPostGeneration();
-      }, 5000);
+      const youtubeBody = {
+        url: content
+      };
+      
+      console.log('Calling YouTube API:', youtubeBody);
+      
+      // Step 1: Call YouTube transcription API
+      fetch(API_URL + '/api/v1/youtube/process', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(youtubeBody)
+      })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          return response.json();
+        })
+        .then(data => {
+          console.log('YouTube API response:', data);
+          
+          if (data.success) {
+            if (data.transcript) {
+              // Store the actual transcript
+              setActualTranscript(data.transcript);
+              setIsTranscriptLoading(false);
+              // Step 2: Use transcript to generate posts
+              startPostGeneration(data.transcript, content);
+            } else {
+              // Video was processed but transcription failed
+              console.warn('Video processed but transcription failed');
+              setActualTranscript('Transcription failed. This might be due to a large file size or API timeout.');
+              setIsTranscriptLoading(false);
+              setContentBlocks(['Error: Video was downloaded successfully, but transcription failed. This might be due to a large file size or API timeout. Please try with a shorter video.']);
+              setIsProcessing(false);
+              setIsComplete(false);
+            }
+          } else {
+            // Handle YouTube API errors
+            console.error('YouTube API error:', data.error_message);
+            setIsTranscriptLoading(false);
+            setContentBlocks([`Error: Failed to process YouTube video. ${data.error_message || 'Please try again.'}`]);
+            setIsProcessing(false);
+            setIsComplete(false);
+          }
+        })
+        .catch(error => {
+          console.error('Error calling YouTube API:', error);
+          setIsTranscriptLoading(false);
+          setContentBlocks(['Error: Unable to process YouTube video. Please check the URL and try again.']);
+          setIsProcessing(false);
+          setIsComplete(false);
+        });
     } else {
+      // Validate text content
+      if (!content.trim()) {
+        setContentBlocks(['Error: Please enter some text to generate posts from.']);
+        setIsProcessing(false);
+        setIsComplete(false);
+        return;
+      }
+      
       // For text content, start post generation immediately
       startPostGeneration();
     }
@@ -179,18 +236,11 @@ As we delve deeper into this topic, we'll explore the fundamental concepts, prac
     setCopySuccess(false);
     setIsContentTransitioning(false);
     setIsYoutubeViewTransitioning(false);
+    setActualTranscript('');
   };
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setContent(e.target.value);
-    
-    // Keep cursor at the top after paste
-    setTimeout(() => {
-      if (textareaRef.current) {
-        textareaRef.current.setSelectionRange(0, 0);
-        textareaRef.current.scrollTop = 0;
-      }
-    }, 0);
   };
 
   const handleYouTubeInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -455,7 +505,7 @@ As we delve deeper into this topic, we'll explore the fundamental concepts, prac
                     
                     {/* Transcript View */}
                     {youtubeViewType === 'transcript' && (
-                      <div className={`absolute inset-0 bg-white rounded-lg shadow-lg overflow-hidden transition-all duration-300 relative ${
+                      <div className={`flex-1 bg-white rounded-lg shadow-lg relative transition-all duration-300 ${
                         isYoutubeViewTransitioning ? 'opacity-0' : 'opacity-100'
                       }`}>
                         {/* Transcript Loading Overlay */}
@@ -468,12 +518,12 @@ As we delve deeper into this topic, we'll explore the fundamental concepts, prac
                           </div>
                         )}
                         
-                        {/* Transcript Content */}
-                        <div className={`h-full p-6 overflow-y-auto transition-all duration-300 ${
+                        {/* Transcript Content - Simple scrollable div */}
+                        <div className={`h-full p-6 overflow-y-auto rounded-lg transition-all duration-300 ${
                           isTranscriptLoading ? 'opacity-50 pointer-events-none' : 'opacity-100'
                         }`}>
-                          <div className="text-sm leading-relaxed text-gray-700 whitespace-pre-line">
-                            {sampleTranscript}
+                          <div className="text-sm leading-relaxed text-gray-700 whitespace-pre-line overflow-y-auto">
+                            {actualTranscript || 'Enter a YouTube URL and click Start to see the transcript here.'}
                           </div>
                         </div>
                       </div>
@@ -525,11 +575,17 @@ As we delve deeper into this topic, we'll explore the fundamental concepts, prac
               )}
             </div>
 
-            {/* Tab Area */}
-            <div className="flex items-center mb-4 flex-shrink-0">
+            {/* Tab Area with Post Count */}
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
               <div className="flex items-center gap-2 px-3 py-2 bg-teal-50 rounded-lg border border-teal-200">
                 <XLogo className="w-4 h-4 text-teal-500" />
+                <span className="text-sm text-teal-700 font-medium">Generated Posts</span>
               </div>
+              {contentBlocks.length > 0 && !isProcessing && (
+                <div className="text-xs text-gray-500">
+                  {contentBlocks.length} post{contentBlocks.length !== 1 ? 's' : ''} generated
+                </div>
+              )}
             </div>
 
             {/* Quotes Container */}
@@ -547,7 +603,7 @@ As we delve deeper into this topic, we'll explore the fundamental concepts, prac
                       }}
                       onClick={() => handlePostClick(index)}
                     >
-                      <p className="text-sm text-gray-700 leading-relaxed line-clamp-3">{block}</p>
+                      <p className="text-sm text-gray-700 leading-relaxed">{block}</p>
                     </div>
                   ))}
                 </div>
