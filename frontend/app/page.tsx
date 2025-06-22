@@ -1,207 +1,380 @@
 "use client";
+import React, { useState, useEffect, useRef } from 'react';
+import { ArrowRight, Loader2, CheckCircle, X, Send, Copy } from 'lucide-react';
 
-import { useState } from "react";
-import Image from "next/image";
+// X.com Logo Component
+const XLogo = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" className={className} fill="currentColor">
+    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+  </svg>
+);
 
-interface Topic {
-  topic_id: number;
-  topic_name: string;
-  content_excerpt: string;
-  confidence_score?: number;
-}
+const API_URL = 'http://localhost:8000';
 
-interface TopicExtractionResponse {
-  topics: Topic[];
-  total_topics: number;
-  processing_time: number;
-}
+function App() {
+  const [content, setContent] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isComplete, setIsComplete] = useState(false);
+  const [contentBlocks, setContentBlocks] = useState<string[]>([]);
+  const [expandedPost, setExpandedPost] = useState<number | null>(null);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [isStarted, setIsStarted] = useState(false);
+  const [editingContent, setEditingContent] = useState('');
+  const [copySuccess, setCopySuccess] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null);
 
-export default function Home() {
-  const [text, setText] = useState("");
-  const [maxTopics, setMaxTopics] = useState(10);
-  const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<TopicExtractionResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const sampleContentBlocks = [
+    "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
+    "Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo. Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit.",
+    "Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. At vero eos et accusamus et iusto odio dignissimos ducimus qui blanditiis praesentium voluptatum deleniti atque corrupti quos dolores et quas molestias excepturi sint occaecati cupiditate non provident, similique sunt in culpa qui officia deserunt mollitia animi.",
+    "Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Temporibus autem quibusdam et aut officiis debitis aut rerum necessitatibus saepe eveniet ut et voluptates repudiandae sint et molestiae non recusandae. Itaque earum rerum hic tenetur a sapiente delectus.",
+    "Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium. Nam libero tempore, cum soluta nobis est eligendi optio cumque nihil impedit quo minus id quod maxime placeat facere possimus, omnis voluptas assumenda est, omnis dolor repellendus.",
+    "Totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt. Et harum quidem rerum facilis est et expedita distinctio. Nam libero tempore, cum soluta nobis est eligendi optio cumque nihil impedit quo minus id quod maxime placeat facere possimus.",
+    "Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores. Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit, sed quia non numquam eius modi tempora incidunt ut labore et dolore magnam aliquam quaerat voluptatem.",
+    "Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit. Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis suscipit laboriosam, nisi ut aliquid ex ea commodi consequatur? Quis autem vel eum iure reprehenderit qui in ea voluptate velit esse quam nihil molestiae consequatur.",
+    "At vero eos et accusamus et iusto odio dignissimos ducimus qui blanditiis praesentium voluptatum deleniti atque corrupti. Vel illum qui dolorem eum fugiat quo voluptas nulla pariatur? At vero eos et accusamus et iusto odio dignissimos ducimus qui blanditiis praesentium voluptatum deleniti atque corrupti quos dolores.",
+    "Et harum quidem rerum facilis est et expedita distinctio. Nam libero tempore, cum soluta nobis est eligendi optio. Temporibus autem quibusdam et aut officiis debitis aut rerum necessitatibus saepe eveniet ut et voluptates repudiandae sint et molestiae non recusandae.",
+    "Temporibus autem quibusdam et aut officiis debitis aut rerum necessitatibus saepe eveniet ut et voluptates repudiandae. Itaque earum rerum hic tenetur a sapiente delectus, ut aut reiciendis voluptatibus maiores alias consequatur aut perferendis doloribus asperiores repellat.",
+    "Itaque earum rerum hic tenetur a sapiente delectus, ut aut reiciendis voluptatibus maiores alias consequatur aut perferendis. Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis."
+  ];
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!text.trim()) {
-      setError("Please enter some text to analyze");
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    setResults(null);
-
-    try {
-      const response = await fetch("http://localhost:8000/api/v1/extract-topics", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          text: text.trim(),
-          max_topics: maxTopics,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail?.detail || errorData.detail || "Failed to extract topics");
+  // Handle escape key to close expanded post
+  useEffect(() => {
+    const handleEscapeKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && expandedPost !== null) {
+        handleCloseExpanded();
       }
+    };
 
-      const data: TopicExtractionResponse = await response.json();
-      setResults(data);
+    document.addEventListener('keydown', handleEscapeKey);
+    return () => {
+      document.removeEventListener('keydown', handleEscapeKey);
+    };
+  }, [expandedPost]);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    if (editTextareaRef.current) {
+      editTextareaRef.current.style.height = 'auto';
+      editTextareaRef.current.style.height = editTextareaRef.current.scrollHeight + 'px';
+    }
+  }, [editingContent]);
+
+  const handleStart = () => {
+    setIsStarted(true);
+    setIsProcessing(true);
+    setContentBlocks([]);
+
+    const body = {
+      text: content,
+      original_url: 'https://example.com/ai-article',
+      max_topics: 5,
+      target_platforms: ['twitter']
+    };
+    console.log(body);
+    
+    // Send the content to the API
+    fetch(API_URL + '/api/v1/generate-posts', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    })
+      .then(response => response.json())
+      .then(data => console.log('API response:', data))
+      .catch(error => console.error('Error generating posts:', error));
+    
+    // Add content blocks gradually during processing
+    const addBlocksGradually = () => {
+      let blockIndex = 0;
+      const interval = setInterval(() => {
+        if (blockIndex < sampleContentBlocks.length) {
+          setContentBlocks(prev => [...prev, sampleContentBlocks[blockIndex]]);
+          blockIndex++;
+        } else {
+          clearInterval(interval);
+        }
+      }, 600); // Add a new block every 600ms
+
+      // Complete processing after 8 seconds (to show more blocks)
+      setTimeout(() => {
+        setIsProcessing(false);
+        setIsComplete(true);
+        clearInterval(interval);
+      }, 8000);
+    };
+
+    addBlocksGradually();
+  };
+
+  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setContent(e.target.value);
+    
+    // Keep cursor at the top after paste
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.setSelectionRange(0, 0);
+        textareaRef.current.scrollTop = 0;
+      }
+    }, 0);
+  };
+
+  const handlePostClick = (index: number) => {
+    setIsTransitioning(true);
+    setExpandedPost(index);
+    setEditingContent(contentBlocks[index]);
+    
+    // Complete transition after animation
+    setTimeout(() => {
+      setIsTransitioning(false);
+    }, 300);
+  };
+
+  const handleCloseExpanded = () => {
+    // Save the edited content back to the content blocks
+    if (expandedPost !== null) {
+      const updatedBlocks = [...contentBlocks];
+      updatedBlocks[expandedPost] = editingContent;
+      setContentBlocks(updatedBlocks);
+    }
+    
+    setIsTransitioning(true);
+    
+    // After animation, reset everything
+    setTimeout(() => {
+      setExpandedPost(null);
+      setIsTransitioning(false);
+      setEditingContent('');
+    }, 300);
+  };
+
+  const handleEditingContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setEditingContent(e.target.value);
+  };
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(editingContent);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An unexpected error occurred");
-    } finally {
-      setLoading(false);
+      console.error('Failed to copy text: ', err);
     }
   };
 
-  const handleClear = () => {
-    setText("");
-    setResults(null);
-    setError(null);
+  const handleSend = () => {
+    // Placeholder for send functionality
+    console.log('Sending content:', editingContent);
+   
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <div className="max-w-4xl mx-auto pt-8">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">
-            🔍 Content Repurposer
-          </h1>
-          <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-            Paste your text below and we will create the required content for you.
-          </p>
-        </div>
-
-        {/* Main Form */}
-        <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Text Input */}
-            <div>
-              <label htmlFor="text" className="block text-sm font-semibold text-gray-700 mb-2">
-                Text to Analyze
-              </label>
-              <textarea
-                id="text"
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                placeholder="Paste your text here... (articles, documents, conversations, etc.)"
-                className="w-full h-64 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none text-gray-900 placeholder-gray-500"
-                disabled={loading}
-              />
-              <div className="text-right mt-1">
-                <span className="text-sm text-gray-500">{text.length} characters</span>
+    <div className="h-screen bg-white p-8 flex flex-col overflow-hidden">
+      <div className="flex flex-1 min-h-0">
+        {/* Content Section */}
+        <div className={`transition-all duration-500 ${isStarted ? 'w-1/2' : 'w-2/3'} flex flex-col min-h-0`}>
+          <div className={`transition-all duration-500 ${isStarted ? 'mb-4' : 'mt-32 mb-8'} flex-shrink-0`}>
+            <div className="flex items-end justify-between mb-8">
+              <div className="flex items-center gap-4">
+                <img 
+                  src="/chameleon_logo.png" 
+                  alt="Chameleon Logo" 
+                  className={`transition-all duration-500 ${
+                    isStarted 
+                      ? 'w-8 h-8' 
+                      : 'w-16 h-16 md:w-20 md:h-20'
+                  }`}
+                />
+                <h1 className={`font-bold bg-gradient-to-r from-teal-700 to-green-500 bg-clip-text text-transparent text-left transition-all duration-500 ${
+                  isStarted 
+                    ? 'text-lg' 
+                    : 'text-5xl md:text-6xl'
+                }`}>
+                  chameleon
+                </h1>
               </div>
-            </div>
-
-            {/* Max Topics Input */}
-            <div>
-              <label htmlFor="maxTopics" className="block text-sm font-semibold text-gray-700 mb-2">
-                Maximum Topics to Extract
-              </label>
-              <input
-                type="number"
-                id="maxTopics"
-                value={maxTopics}
-                onChange={(e) => setMaxTopics(Math.max(1, Math.min(50, parseInt(e.target.value) || 10)))}
-                min="1"
-                max="50"
-                className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-gray-900"
-                disabled={loading}
-              />
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex gap-4">
-              <button
-                type="submit"
-                disabled={loading || !text.trim()}
-                className="flex-1 bg-indigo-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
-              >
-                {loading ? (
-                  <div className="flex items-center justify-center">
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                    Loading...
-                  </div>
-                ) : (
-                  "Send"
-                )}
-              </button>
               
-              <button
-                type="button"
-                onClick={handleClear}
-                disabled={loading}
-                className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg font-semibold hover:bg-gray-50 focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
-              >
-                Clear
-              </button>
-            </div>
-          </form>
-        </div>
-
-        {/* Error Display */}
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-8">
-            <div className="flex items-center">
-              <div className="text-red-600 mr-3">⚠️</div>
-              <div>
-                <h3 className="text-red-800 font-semibold">Error</h3>
-                <p className="text-red-700">{error}</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Results Display */}
-        {results && (
-          <div className="bg-white rounded-2xl shadow-xl p-8">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-bold text-gray-900">
-                Extracted Topics ({results.total_topics})
-              </h2>
-              <div className="text-sm text-gray-500">
-                Processed in {results.processing_time.toFixed(2)}s
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              {results.topics.map((topic) => (
-                <div
-                  key={topic.topic_id}
-                  className="border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow duration-200"
+              {content.trim() && !isStarted && (
+                <button 
+                  onClick={handleStart}
+                  className="bg-gradient-to-r from-teal-600 to-teal-400 text-white px-4 py-2 rounded-lg hover:bg-teal-400 transition-all transform hover:scale-105 flex items-center gap-2 text-sm font-semibold"
                 >
-                  <div className="flex items-start justify-between mb-3">
-                    <h3 className="text-lg font-semibold text-gray-900">
-                      {topic.topic_name}
-                    </h3>
-                    {topic.confidence_score && (
-                      <div className="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-sm font-medium">
-                        {Math.round(topic.confidence_score * 100)}% confidence
-                      </div>
-                    )}
+                  Start
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+          
+          <textarea
+            ref={textareaRef}
+            value={content}
+            onChange={handleContentChange}
+            placeholder="Paste your content here..."
+            className="w-full flex-1 min-h-0 p-6 rounded-lg resize-none focus:outline-none shadow-lg text-sm leading-relaxed text-left bg-white text-black"
+            disabled={isProcessing || isComplete}
+          />
+        </div>
+
+        {/* Processing/Complete Section */}
+        {isStarted && (
+          <div className="w-1/2 p-8 flex flex-col min-h-0">
+            <div className="text-center mb-6 flex-shrink-0">
+              {isProcessing ? (
+                <>
+                  <div className="w-12 h-12 mx-auto mb-3 bg-teal-50 rounded-full flex items-center justify-center">
+                    <Loader2 className="w-6 h-6 text-teal-500 animate-spin" />
                   </div>
-                  <p className="text-gray-700 leading-relaxed">
-                    {topic.content_excerpt}
-                  </p>
+                  <p className="text-gray-600 text-xs">Processing...</p>
+                </>
+              ) : (
+                <>
+                  <div className="w-12 h-12 mx-auto mb-3 bg-green-50 rounded-full flex items-center justify-center">
+                    <CheckCircle className="w-6 h-6 text-green-600" />
+                  </div>
+                  <p className="text-green-600 text-xs font-medium">Complete!</p>
+                </>
+              )}
+            </div>
+
+            {/* Tab Area */}
+            <div className="flex items-center mb-4 flex-shrink-0">
+              <div className="flex items-center gap-2 px-3 py-2 bg-teal-50 rounded-lg border border-teal-200">
+                <XLogo className="w-4 h-4 text-teal-500" />
+              </div>
+            </div>
+
+            {/* Quotes Container */}
+            <div className="flex-1 min-h-0 bg-gray-50 rounded-lg border border-gray-200 p-4 relative overflow-hidden">
+              {/* Normal view - scrollable content blocks */}
+              <div className={`h-full transition-all duration-300 ${expandedPost !== null ? 'opacity-0 scale-95' : 'opacity-100 scale-100'}`}>
+                <div className="h-full overflow-y-auto space-y-4 pr-2">
+                  {contentBlocks.map((block, index) => (
+                    <div
+                      key={index}
+                      className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm animate-fade-in flex-shrink-0 cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-md hover:border-teal-300"
+                      style={{
+                        animationDelay: `${index * 0.1}s`,
+                        animationFillMode: 'both'
+                      }}
+                      onClick={() => handlePostClick(index)}
+                    >
+                      <p className="text-sm text-gray-700 leading-relaxed line-clamp-3">{block}</p>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </div>
+
+              {/* Expanded view - fills the entire quotes container */}
+              {expandedPost !== null && (
+                <div className={`absolute inset-0 text-sm bg-white shadow-lg border border-gray-200 rounded-lg flex transition-all duration-300 ${
+                  isTransitioning ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
+                }`}>
+                  {/* Main content area */}
+                  <div className="flex-1 flex flex-col">
+                    {/* Editable Content */}
+                    <div className="flex-1 p-6 overflow-y-auto">
+                      <textarea
+                        ref={editTextareaRef}
+                        value={editingContent}
+                        onChange={handleEditingContentChange}
+                        className="w-full min-h-full resize-none border-none outline-none text-gray-700 leading-relaxed text-sm bg-transparent"
+                        placeholder="Start editing your content..."
+                        style={{ minHeight: '200px' }}
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* Right sidebar with controls */}
+                  <div className="w-12 bg-gray-50 border-l border-gray-200 flex flex-col items-center py-4 gap-4">
+                    {/* Close button */}
+                    <button
+                      onClick={handleCloseExpanded}
+                      className="p-3 hover:bg-gray-200 rounded-lg transition-colors group"
+                      title="Close (ESC)"
+                    >
+                      <X className="w-3 h-3 text-gray-500 group-hover:text-gray-700" />
+                    </button>
+                    
+                    {/* Send button */}
+                    <button
+                      onClick={handleSend}
+                      className="p-3 bg-gradient-to-r from-teal-600 to-teal-400 hover:bg-teal-500 rounded-lg transition-colors group"
+                      title="Send"
+                    >
+                      <Send className="w-3 h-3 text-white" />
+                    </button>
+                    
+                    {/* Copy button */}
+                    <button
+                      onClick={handleCopy}
+                      className={`p-3 rounded-lg transition-colors group ${
+                        copySuccess 
+                          ? 'bg-green-100 hover:bg-green-200' 
+                          : 'hover:bg-gray-200'
+                      }`}
+                      title="Copy to clipboard"
+                    >
+                      <Copy className={`w-3 h-3 ${
+                        copySuccess 
+                          ? 'text-green-600' 
+                          : 'text-gray-500 group-hover:text-gray-700'
+                      }`} />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
-
-        {/* Footer */}
-        <div className="text-center mt-12 text-gray-500 text-sm">
-          <p>Powered by FastAPI + LangGraph • Built with Next.js</p>
-        </div>
       </div>
+
+      <style jsx>{`
+        @keyframes fade-in {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        
+        .animate-fade-in {
+          animation: fade-in 0.5s ease-out;
+        }
+
+        .line-clamp-3 {
+          display: -webkit-box;
+          -webkit-line-clamp: 3;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
+
+        /* Custom scrollbar styling */
+        .overflow-y-auto::-webkit-scrollbar {
+          width: 6px;
+        }
+        
+        .overflow-y-auto::-webkit-scrollbar-track {
+          background: #f1f5f9;
+          border-radius: 3px;
+        }
+        
+        .overflow-y-auto::-webkit-scrollbar-thumb {
+          background: #cbd5e1;
+          border-radius: 3px;
+        }
+        
+        .overflow-y-auto::-webkit-scrollbar-thumb:hover {
+          background: #94a3b8;
+        }
+      `}</style>
     </div>
   );
 }
+
+export default App;
