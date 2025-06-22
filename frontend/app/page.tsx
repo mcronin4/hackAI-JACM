@@ -1,6 +1,9 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowRight, Loader2, CheckCircle, X, Send, Copy, FileText, Youtube, Video, FileText as Transcript } from 'lucide-react';
+import { useAuthStore } from '@/lib/auth-store';
+import { ProfileDropdown } from '@/components/ProfileDropdown';
+import { useSearchParams } from 'next/navigation';
 
 // X.com Logo Component
 const XLogo = ({ className }: { className?: string }) => (
@@ -54,6 +57,8 @@ interface APIResponse {
 }
 
 function App() {
+  const { user, isLoggedIn, isLoading, loginWithX, logout, checkAuthStatus, resetAuthState } = useAuthStore();
+  const searchParams = useSearchParams();
   const [content, setContent] = useState('');
   const [contentType, setContentType] = useState<'text' | 'youtube'>('text');
   const [youtubeViewType, setYoutubeViewType] = useState<'video' | 'transcript'>('video');
@@ -74,6 +79,23 @@ function App() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const youtubeInputRef = useRef<HTMLInputElement>(null);
+
+  // Check authentication status on component mount
+  useEffect(() => {
+    checkAuthStatus();
+  }, [checkAuthStatus]);
+
+  // Handle auth errors from URL parameters
+  useEffect(() => {
+    const error = searchParams.get('error');
+    if (error) {
+      console.error('Authentication error:', error);
+      // You can add a toast notification here if you want
+      // For now, we'll just log it
+    }
+  }, [searchParams]);
+
+
 
   // Handle escape key to close expanded post
   useEffect(() => {
@@ -365,6 +387,7 @@ function App() {
 
   const handleContentTypeChange = (newType: 'text' | 'youtube') => {
     if (newType !== contentType) {
+      setIsContentTransitioning(true);
       setContentType(newType);
       
       // Focus the appropriate input after transition
@@ -466,7 +489,36 @@ function App() {
   const hasValidYouTubeUrl = youtubeVideoId !== null;
 
   return (
-    <div className="h-screen bg-white p-8 flex flex-col overflow-hidden">
+    <div className="h-screen bg-white p-8 flex flex-col overflow-hidden relative">
+      {/* Fixed Profile/Login Button - Top Right */}
+      <div className="fixed top-4 right-4 z-50">
+        {isLoggedIn && user ? (
+          <ProfileDropdown 
+            user={user} 
+            isLoading={isLoading} 
+            onLogout={logout} 
+          />
+        ) : (
+          <button 
+            onClick={loginWithX}
+            disabled={isLoading}
+            className="bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition-all transform hover:scale-105 flex items-center gap-2 text-sm font-semibold shadow-lg"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Connecting...
+              </>
+            ) : (
+              <>
+                <XLogo className="w-4 h-4" />
+                Login with X
+              </>
+            )}
+          </button>
+        )}
+      </div>
+
       <div className="flex flex-1 min-h-0">
         {/* Content Section */}
         <div className={`transition-all duration-500 ${isStarted ? 'w-1/2' : 'w-2/3'} flex flex-col min-h-0`}>
@@ -506,6 +558,7 @@ function App() {
                 </div>
               </div>
               
+              {/* Start Button */}
               {content.trim() && !isStarted && (
                 <button 
                   onClick={handleStart}
@@ -767,25 +820,16 @@ function App() {
                       );
                     })}
                 </div>
-                
-                {/* Post count for active platform */}
-                {(() => {
-                  const activePosts = platformPosts[activePlatformTab] || [];
-                  return activePosts.length > 0 && !isProcessing ? (
-                    <div className="text-xs text-gray-500">
-                      {activePosts.length} post{activePosts.length !== 1 ? 's' : ''} generated
-                    </div>
-                  ) : null;
-                })()}
-              </div>
+              )}
+            </div>
 
-              {/* Active Platform Posts Container */}
-              {(() => {
-                const activePosts = platformPosts[activePlatformTab] || [];
-                const platformBg = activePlatformTab === 'twitter' ? 'bg-gray-50 border-gray-200' : 'bg-blue-50 border-blue-200';
+            {/* Active Platform Posts Container */}
+            {(() => {
+              const activePosts = platformPosts[activePlatformTab] || [];
+              const platformBg = activePlatformTab === 'twitter' ? 'bg-gray-50 border-gray-200' : 'bg-blue-50 border-blue-200';
 
-                return (
-                  <div className={`flex-1 min-h-0 ${platformBg} rounded-lg border p-4 relative overflow-hidden`}>
+              return (
+                <div className={`flex-1 min-h-0 ${platformBg} rounded-lg border p-4 relative overflow-hidden`}>
                     {/* Normal view - scrollable platform posts */}
                     <div className={`h-full transition-all duration-300 ${
                       expandedPost?.platform === activePlatformTab ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
@@ -903,7 +947,6 @@ function App() {
                   </div>
                 );
               })()}
-            </div>
           </div>
         )}
       </div>
