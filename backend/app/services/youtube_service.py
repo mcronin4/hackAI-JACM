@@ -5,6 +5,7 @@ from typing import Dict, Any
 from datetime import datetime
 import time
 import yt_dlp
+import tempfile
 
 from .transcription_service import TranscriptionService, TranscriptionError
 
@@ -31,9 +32,8 @@ class YouTubeService:
         if downloads_dir:
             self.downloads_dir = downloads_dir
         else:
-            # Assumes service is in app/services, puts downloads in backend/downloads
-            backend_dir = Path(__file__).resolve().parents[2]
-            self.downloads_dir = os.path.join(backend_dir, "downloads")
+            # Use /tmp for Vercel compatibility
+            self.downloads_dir = "/tmp"
         
         os.makedirs(self.downloads_dir, exist_ok=True)
         logger.info(f"MP3 files will be saved to: {self.downloads_dir}")
@@ -57,6 +57,7 @@ class YouTubeService:
         """
         start_time = time.time()
         
+        # Use temporary file for Vercel compatibility
         output_template = os.path.join(self.downloads_dir, '%(title)s.%(ext)s')
         
         ydl_opts = {
@@ -96,13 +97,20 @@ class YouTubeService:
                 file_size = os.path.getsize(downloaded_filename)
                 processing_time = time.time() - start_time
                 
+                # Clean up the temporary file to save space
+                try:
+                    os.remove(downloaded_filename)
+                    logger.info(f"Cleaned up temporary file: {downloaded_filename}")
+                except Exception as e:
+                    logger.warning(f"Could not clean up temporary file: {e}")
+                
                 return {
                     "success": True,
                     "video_id": info.get("id"),
                     "video_title": info.get("title"),
                     "video_duration": info.get("duration"),
                     "audio_stream": {
-                        "url": downloaded_filename,
+                        "url": f"processed_in_tmp_{info.get('id', 'unknown')}",
                         "format": os.path.splitext(downloaded_filename)[1][1:],  # Get file extension
                         "size": f"{file_size} bytes"
                     },
