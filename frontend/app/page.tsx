@@ -77,6 +77,8 @@ function AppContent() {
   const [isContentTransitioning, setIsContentTransitioning] = useState(false);
   const [isYoutubeViewTransitioning, setIsYoutubeViewTransitioning] = useState(false);
   const [actualTranscript, setActualTranscript] = useState<string>('');
+  const [streamingStatus, setStreamingStatus] = useState<string>('');
+  const [pipelineProgress, setPipelineProgress] = useState<number>(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const youtubeInputRef = useRef<HTMLInputElement>(null);
@@ -188,9 +190,171 @@ function AppContent() {
       body.original_url = youtubeUrl;
     }
     
-    console.log('Sending post generation request:', body);
+    console.log('Sending streaming post generation request:', body);
     
-    // Send the content to the API
+    // Use streaming API for better user experience
+    startStreamingPostGeneration(body);
+  };
+
+  // New streaming post generation function
+  const startStreamingPostGeneration = (body: { text: string; target_platforms: string[]; original_url?: string }) => {
+    // Reset state before starting
+    setPlatformPosts({ twitter: [], linkedin: [] });
+    setStreamingStatus('');
+    setPipelineProgress(0);
+    
+    // Use fetch for streaming POST requests (EventSource only supports GET)
+    fetch(API_URL + '/api/v1/stream-posts', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+        'Cache-Control': 'no-cache'
+      },
+      body: JSON.stringify(body)
+    })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error('No response body reader available');
+        }
+        
+        return reader;
+      })
+      .then(reader => {
+        const decoder = new TextDecoder();
+        let buffer = '';
+        
+        const processChunk = async (): Promise<void> => {
+          const { done, value } = await reader.read();
+          
+          if (done) {
+            setIsProcessing(false);
+            return;
+          }
+          
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || ''; // Keep the last incomplete line in buffer
+          
+          for (const line of lines) {
+            if (line.startsWith('event: ') || line.startsWith('data: ')) {
+              handleStreamingEvent(line);
+            }
+          }
+          
+          // Continue processing
+          return processChunk();
+        };
+        
+        return processChunk();
+      })
+      .catch(error => {
+        console.error('Streaming error:', error);
+        setPlatformPosts({ twitter: [], linkedin: [] });
+        setContentBlocks(['Error: Failed to establish streaming connection. Falling back to regular API...']);
+        
+        // Fallback to regular API
+        fallbackToRegularAPI(body);
+      });
+  };
+
+  // Handle streaming events
+  const handleStreamingEvent = (line: string) => {
+    try {
+      console.log('Raw streaming line:', line); // Debug log
+      
+      if (line.startsWith('event: ')) {
+        const eventType = line.substring(7); // Remove 'event: '
+        console.log('Event type:', eventType); // Debug log
+        return;
+      }
+      
+      if (line.startsWith('data: ')) {
+        const jsonData = line.substring(6); // Remove 'data: '
+        console.log('Raw JSON data:', jsonData); // Debug log
+        
+        const eventData = JSON.parse(jsonData);
+        console.log('Parsed event data:', eventData); // Debug log
+        
+        // Check for post content - the backend sends data directly, not nested in 'data' field
+        if (eventData.post_content) {
+          console.log('Found post content, adding to UI'); // Debug log
+          
+          // New post received
+          const newPost: PlatformPost = {
+            post_content: eventData.post_content,
+            topic_id: eventData.topic_id || 0,
+            topic_name: eventData.topic_name || '',
+            primary_emotion: eventData.primary_emotion || '',
+            content_strategy: eventData.content_strategy || '',
+            processing_time: eventData.processing_time || 0
+          };
+          
+          const platform = (eventData.platform || 'twitter') as Platform;
+          console.log('Adding post to platform:', platform, 'Current state:', platformPosts); // Debug log
+          
+          setPlatformPosts(prev => {
+            // Ensure the platform array exists before spreading
+            const currentPlatformPosts = prev[platform] || [];
+            const updated = {
+              ...prev,
+              [platform]: [...currentPlatformPosts, newPost]
+            };
+            console.log('Updated platform posts:', updated); // Debug log
+            return updated;
+          });
+          
+          // Update pipeline progress (from backend)
+          if (typeof eventData.progress === 'number') {
+            setPipelineProgress(eventData.progress);
+          }
+          
+          // Update post progress for status display
+          if (eventData.post_progress) {
+            setStreamingStatus(`Generated ${eventData.post_progress.completed}/${eventData.post_progress.total} posts`);
+          }
+        } else if (eventData.message) {
+          // Status update
+          console.log('Status update:', eventData.message);
+          setStreamingStatus(eventData.message);
+          
+          // Update pipeline progress
+          if (typeof eventData.progress === 'number') {
+            setPipelineProgress(eventData.progress);
+          }
+          
+          // Set expected total when we know it (no longer needed with pipeline progress)
+          // if (eventData.total_posts_expected) {
+          //   // This was for individual post progress, now using pipeline progress
+          // }
+        } else if (eventData.error) {
+          // Error occurred
+          console.error('Streaming error:', eventData.error);
+          setContentBlocks([`Error: ${eventData.error}`]);
+          setStreamingStatus(`Error: ${eventData.error}`);
+          setIsProcessing(false);
+        } else if (eventData.total_processing_time !== undefined) {
+          // Completion event
+          console.log('Streaming complete');
+          setStreamingStatus('All posts generated successfully!');
+          setPipelineProgress(100);
+          setIsProcessing(false);
+        } else {
+          console.log('Unhandled event data:', eventData); // Debug log
+        }
+      }
+    } catch (error) {
+      console.error('Error parsing streaming event:', error, 'Line:', line);
+    }
+  };
+
+  // Fallback to regular API if streaming fails
+  const fallbackToRegularAPI = (body: { text: string; target_platforms: string[]; original_url?: string }) => {
     fetch(API_URL + '/api/v1/generate-posts', {
       method: 'POST',
       headers: {
@@ -199,89 +363,29 @@ function AppContent() {
       body: JSON.stringify(body)
     })
       .then(response => {
-        console.log('Raw API response:', {
-          status: response.status,
-          statusText: response.statusText,
-          headers: Object.fromEntries(response.headers.entries()),
-          url: response.url
-        });
-        
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         return response.json();
       })
       .then((data: APIResponse) => {
-        console.log('Post generation API response:', data);
-        console.log('Response type:', typeof data);
-        console.log('Response keys:', Object.keys(data || {}));
-        
         if (data.success && data.platform_posts) {
-          // Set the platform-separated posts
           setPlatformPosts(data.platform_posts);
           
-          // Also set legacy contentBlocks for backwards compatibility
           const allPosts: string[] = [];
           selectedPlatforms.forEach(platform => {
             const posts = data.platform_posts[platform] || [];
             posts.forEach(post => allPosts.push(post.post_content));
           });
           setContentBlocks(allPosts);
-          
-          setIsProcessing(false);
         } else {
-          // Handle API errors with better debugging
-          console.error('API Error Details:', {
-            success: data.success,
-            error: data.error,
-            platform_posts: data.platform_posts,
-            generated_posts: data.generated_posts,
-            fullResponse: data
-          });
-          
-          setPlatformPosts({ twitter: [], linkedin: [] });
-          
-          // Provide more specific error messages
-          let errorMessage = 'Error: Failed to generate posts.';
-          if (data.error) {
-            errorMessage = `Error: ${data.error}`;
-          } else if (!data.success) {
-            errorMessage = 'Error: API request was not successful.';
-          } else if (!data.platform_posts && !data.generated_posts) {
-            errorMessage = 'Error: No posts were generated. Please try again.';
-          }
-          
-          setContentBlocks([errorMessage]);
-          setIsProcessing(false);
+          setContentBlocks(['Error: Failed to generate posts using fallback API.']);
         }
+        setIsProcessing(false);
       })
       .catch(error => {
-        console.error('Error generating posts:', error);
-        console.error('Error details:', {
-          message: error.message,
-          name: error.name,
-          stack: error.stack,
-          apiUrl: API_URL + '/api/v1/generate-posts',
-          requestBody: {
-            text: transcriptText || content,
-            target_platforms: selectedPlatforms,
-            original_url: youtubeUrl
-          }
-        });
-        
-        setPlatformPosts({ twitter: [], linkedin: [] });
-        
-        // Provide more specific error messages based on error type
-        let errorMessage = 'Error: Unable to connect to the server.';
-        if (error.name === 'TypeError' && error.message.includes('fetch')) {
-          errorMessage = 'Error: Cannot connect to backend server. Please ensure the backend is running on http://localhost:8000';
-        } else if (error.message.includes('timeout')) {
-          errorMessage = 'Error: Request timed out. Please try again.';
-        } else if (error.message.includes('NetworkError')) {
-          errorMessage = 'Error: Network error. Please check your internet connection.';
-        }
-        
-        setContentBlocks([errorMessage]);
+        console.error('Fallback API error:', error);
+        setContentBlocks(['Error: Both streaming and fallback APIs failed.']);
         setIsProcessing(false);
       });
   };
@@ -376,6 +480,8 @@ function AppContent() {
     setEditingContent('');
     setCopySuccess(false);
     setActualTranscript('');
+    setStreamingStatus('');
+    setPipelineProgress(0);
     setActivePlatformTab(selectedPlatforms[0] || 'twitter');
   };
 
@@ -781,7 +887,24 @@ function AppContent() {
                   <div className="w-12 h-12 mx-auto mb-3 bg-teal-50 rounded-full flex items-center justify-center">
                     <Loader2 className="w-6 h-6 text-teal-500 animate-spin" />
                   </div>
-                  <p className="text-gray-600 text-xs">Processing...</p>
+                  <div className="text-gray-600 text-xs space-y-2">
+                    <p>{streamingStatus || 'Processing...'}</p>
+                    {/* Pipeline progress bar (0-100%) */}
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div 
+                        className="bg-teal-500 h-2 rounded-full transition-all duration-500" 
+                        style={{ 
+                          width: `${pipelineProgress}%` 
+                        }}
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      {pipelineProgress < 25 ? 'Extracting topics...' : 
+                       pipelineProgress < 50 ? 'Analyzing emotions...' : 
+                       pipelineProgress < 100 ? 'Generating posts...' : 
+                       'Complete!'}
+                    </p>
+                  </div>
                 </>
               ) : (
                 <>
