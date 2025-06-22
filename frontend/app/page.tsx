@@ -95,8 +95,6 @@ function App() {
     }
   }, [searchParams]);
 
-
-
   // Handle escape key to close expanded post
   useEffect(() => {
     const handleEscapeKey = (event: KeyboardEvent) => {
@@ -820,16 +818,15 @@ function App() {
                       );
                     })}
                 </div>
-              )}
-            </div>
+              </div>
 
-            {/* Active Platform Posts Container */}
-            {(() => {
-              const activePosts = platformPosts[activePlatformTab] || [];
-              const platformBg = activePlatformTab === 'twitter' ? 'bg-gray-50 border-gray-200' : 'bg-blue-50 border-blue-200';
+              {/* Active Platform Posts Container */}
+              {(() => {
+                const activePosts = platformPosts[activePlatformTab] || [];
+                const platformBg = activePlatformTab === 'twitter' ? 'bg-gray-50 border-gray-200' : 'bg-blue-50 border-blue-200';
 
-              return (
-                <div className={`flex-1 min-h-0 ${platformBg} rounded-lg border p-4 relative overflow-hidden`}>
+                return (
+                  <div className={`flex-1 min-h-0 ${platformBg} rounded-lg border p-4 relative overflow-hidden`}>
                     {/* Normal view - scrollable platform posts */}
                     <div className={`h-full transition-all duration-300 ${
                       expandedPost?.platform === activePlatformTab ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
@@ -947,6 +944,7 @@ function App() {
                   </div>
                 );
               })()}
+            </div>
           </div>
         )}
       </div>
