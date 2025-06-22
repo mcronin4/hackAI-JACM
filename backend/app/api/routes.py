@@ -297,9 +297,7 @@ async def generate_posts(
             target_platforms=request.target_platforms
         )
         
-        if result['success']:
-            logger.info(f"Successfully generated {len(result['generated_posts'])} posts from {result['total_topics']} topics")
-            
+        if result['success']:            
             # Create platform-separated posts structure
             platform_posts = PlatformPosts()
             
