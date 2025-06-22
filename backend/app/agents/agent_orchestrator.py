@@ -4,7 +4,9 @@ from langgraph.graph.message import add_messages
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 import json
 import time
+import asyncio
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 
 from .topic_extractor import TopicExtractorAgent, TopicExtractionState
 from .emotion_targeting import EmotionTargetingAgent, EmotionTargetingState
@@ -337,4 +339,202 @@ class AgentOrchestrator:
                 'status': 'active' if self.emotion_targeting else 'inactive',
                 'temperature': self.temperature  # Emotion targeting uses the same temperature
             }
+        }
+
+    async def process_text_parallel(self, text: str, max_topics: int = 10) -> Dict[str, Any]:
+        """
+        Process text through the workflow with topic-level parallelization.
+        After topic extraction, each topic is processed independently through emotion analysis.
+        
+        Args:
+            text: Input text to process
+            max_topics: Maximum number of topics to extract
+            
+        Returns:
+            Dictionary containing the complete workflow results
+        """
+        start_time = datetime.now()
+        
+        try:
+            # Step 1: Extract topics (sequential)
+            topic_start = time.time()
+            topic_result = self.topic_extractor.extract_topics(
+                text=text,
+                max_topics=max_topics
+            )
+            topic_extraction_time = time.time() - topic_start
+            
+            if not topic_result['success']:
+                return self._create_error_response(
+                    f"Topic extraction failed: {topic_result['error']}", 
+                    start_time,
+                    topic_extraction_time,
+                    0.0
+                )
+            
+            if not topic_result['topics']:
+                return self._create_error_response(
+                    "No topics were extracted from the text", 
+                    start_time,
+                    topic_extraction_time,
+                    0.0
+                )
+            
+            topics = topic_result['topics']
+            
+            # Step 2: Process each topic through emotion analysis in parallel
+            emotion_start = time.time()
+            tasks = []
+            
+            for topic in topics:
+                task = self._process_single_topic_emotion(topic)
+                tasks.append(task)
+            
+            # Execute all emotion analysis tasks in parallel
+            emotion_results = await asyncio.gather(*tasks, return_exceptions=True)
+            emotion_targeting_time = time.time() - emotion_start
+            
+            # Process results
+            emotion_analysis = []
+            failed_topics = []
+            
+            for i, result in enumerate(emotion_results):
+                if isinstance(result, Exception):
+                    failed_topics.append(f"Topic {topics[i]['topic_id']}: {str(result)}")
+                elif result['success']:
+                    emotion_analysis.append(result['emotion_analysis'])
+                else:
+                    failed_topics.append(f"Topic {topics[i]['topic_id']}: {result['error']}")
+            
+            # Check if any topics failed
+            if failed_topics:
+                return self._create_error_response(
+                    f"Emotion analysis failed for some topics: {'; '.join(failed_topics)}",
+                    start_time,
+                    topic_extraction_time,
+                    emotion_targeting_time
+                )
+            
+            # Create combined results
+            total_time = topic_extraction_time + emotion_targeting_time
+            
+            combined_results = {
+                'workflow_summary': {
+                    'status': 'completed',
+                    'total_processing_time': total_time,
+                    'topics_extracted': len(topics),
+                    'emotions_analyzed': len(emotion_analysis),
+                    'timestamp': datetime.now().isoformat(),
+                    'parallelization': 'topic_level'
+                },
+                'topic_extraction': {
+                    'topics': topics,
+                    'processing_time': topic_extraction_time,
+                    'error': None
+                },
+                'emotion_targeting': {
+                    'emotion_analysis': emotion_analysis,
+                    'processing_time': emotion_targeting_time,
+                    'error': None,
+                    'parallel_execution': True
+                },
+                'integrated_results': self._create_integrated_results_parallel(topics, emotion_analysis)
+            }
+            
+            return combined_results
+            
+        except Exception as e:
+            total_time = (datetime.now() - start_time).total_seconds()
+            return self._create_error_response(
+                f"Parallel orchestrator execution failed: {str(e)}",
+                start_time,
+                0.0,
+                0.0
+            )
+
+    async def _process_single_topic_emotion(self, topic: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Process emotion analysis for a single topic in a thread pool
+        """
+        try:
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                emotion_result = await loop.run_in_executor(
+                    executor,
+                    self.emotion_targeting.analyze_emotions,
+                    [topic],  # Pass as list since method expects list
+                    ""  # No audience context in basic orchestrator
+                )
+            
+            if emotion_result['success'] and emotion_result['emotion_analysis']:
+                return {
+                    'success': True,
+                    'emotion_analysis': emotion_result['emotion_analysis'][0]  # Get first result
+                }
+            else:
+                return {
+                    'success': False,
+                    'error': emotion_result.get('error', 'Unknown emotion analysis error')
+                }
+                
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f"Emotion analysis execution error: {str(e)}"
+            }
+
+    def _create_integrated_results_parallel(self, topics: List[Dict[str, Any]], emotion_analysis: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Create integrated results for parallel processing"""
+        integrated = []
+        
+        # Create a mapping of topic_id to emotion analysis
+        emotion_map = {
+            analysis['topic_id']: analysis 
+            for analysis in emotion_analysis
+        }
+        
+        # Combine topics with their emotion analysis
+        for topic in topics:
+            topic_id = topic.get('topic_id')
+            emotion_data = emotion_map.get(topic_id, {})
+            
+            integrated_topic = {
+                'topic_id': topic_id,
+                'topic_name': topic.get('topic_name'),
+                'content_excerpt': topic.get('content_excerpt'),
+                'confidence_score': topic.get('confidence_score'),
+                'emotion_targeting': {
+                    'primary_emotion': emotion_data.get('primary_emotion'),
+                    'emotion_confidence': emotion_data.get('emotion_confidence'),
+                    'reasoning': emotion_data.get('reasoning')
+                } if emotion_data else None
+            }
+            
+            integrated.append(integrated_topic)
+        
+        return integrated
+
+    def _create_error_response(self, error_message: str, start_time: datetime, topic_time: float, emotion_time: float) -> Dict[str, Any]:
+        """Create standardized error response"""
+        total_time = (datetime.now() - start_time).total_seconds()
+        
+        return {
+            'workflow_summary': {
+                'status': 'failed',
+                'error_source': 'orchestrator',
+                'error_message': error_message,
+                'timestamp': datetime.now().isoformat(),
+                'total_processing_time': total_time
+            },
+            'topic_extraction': {
+                'topics': [], 
+                'processing_time': topic_time, 
+                'error': error_message if topic_time == 0 else None
+            },
+            'emotion_targeting': {
+                'emotion_analysis': [], 
+                'processing_time': emotion_time, 
+                'error': error_message if emotion_time > 0 else None
+            },
+            'integrated_results': []
         } 

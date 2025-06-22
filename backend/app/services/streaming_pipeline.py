@@ -155,55 +155,20 @@ class StreamingPipelineService:
                 "timestamp": datetime.now().isoformat()
             })
             
-            # Step 3: Analyze emotions for the extracted topics with audience context (30-45%)
+            # Step 3-4: Process each topic in parallel through emotion analysis → content generation (30-75%)
             yield self._format_sse_event("status", {
-                "message": "Analyzing emotions...",
-                "stage": "emotion_analysis",
+                "message": f"Processing {len(topic_result['topics'])} topics in parallel (emotion analysis → content generation)...",
+                "stage": "parallel_processing_start",
                 "progress": 35,
                 "timestamp": datetime.now().isoformat()
             })
             
-            emotion_result = self.emotion_analyzer.analyze_emotions(
-                topics=topic_result['topics'],
-                audience_context=audience_context
-            )
-            
-            if not emotion_result['success']:
-                yield self._format_sse_event("error", {
-                    "error": f"Emotion analysis failed: {emotion_result['error']}",
-                    "stage": "emotion_analysis"
-                })
-                return
-            
-            if not emotion_result['emotion_analysis']:
-                yield self._format_sse_event("error", {
-                    "error": "No emotion analysis results were generated",
-                    "stage": "emotion_analysis"
-                })
-                return
-            
-            enhanced_topics = emotion_result['emotion_analysis']
-            total_posts_expected = len(enhanced_topics) * len(target_platforms)
-            
-            logger.info(f"✅ Step 3/5 - Emotion analysis completed in {emotion_result['processing_time']:.2f}s, analyzed {len(emotion_result['emotion_analysis'])} topics")
-            for i, enhanced_topic in enumerate(emotion_result['emotion_analysis'], 1):
-                logger.info(f"📝 Topic {i} Emotion: {enhanced_topic['primary_emotion']} - {enhanced_topic['reasoning'][:100]}{'...' if len(enhanced_topic['reasoning']) > 100 else ''}")
-            
-            yield self._format_sse_event("status", {
-                "message": f"Emotion analysis complete. Generating {total_posts_expected} posts...",
-                "stage": "content_generation_start",
-                "total_posts_expected": total_posts_expected,
-                "platforms": target_platforms,
-                "progress": 45,
-                "timestamp": datetime.now().isoformat()
-            })
-            
-            # Step 4: Generate content in parallel (45-75%) - DON'T stream posts yet
+            # Process each topic through its complete pipeline in parallel
             generated_posts = []
             content_generation_time = 0
             
-            async for event in self._stream_content_generation(
-                enhanced_topics=enhanced_topics,
+            async for event in self._stream_parallel_topic_processing(
+                topics=topic_result['topics'],
                 original_text=text,
                 original_url=original_url,
                 audience_context=audience_context,
@@ -215,7 +180,7 @@ class StreamingPipelineService:
                     data_line = event.split('\n')[1]  # Get the data line
                     post_data = json.loads(data_line[5:])  # Remove "data: " prefix
                     generated_posts.append(post_data)
-                    content_generation_time += post_data['processing_time']
+                    content_generation_time += post_data.get('processing_time', 0)
                 else:
                     # Only yield status updates, not the actual posts
                     yield event
@@ -255,6 +220,163 @@ class StreamingPipelineService:
                 "stage": "unknown"
             })
     
+    async def _stream_parallel_topic_processing(
+        self,
+        topics: List[Dict[str, Any]],
+        original_text: str,
+        original_url: str,
+        audience_context: str,
+        target_platforms: List[str]
+    ) -> AsyncGenerator[str, None]:
+        """
+        Process each topic through the complete pipeline in parallel:
+        Each topic goes through emotion analysis → content generation sequentially,
+        but all topics run their pipelines in parallel with each other.
+        """
+        # Create tasks for parallel topic processing
+        tasks = []
+        task_metadata = []
+        
+        for topic in topics:
+            task = self._process_single_topic_pipeline(
+                topic=topic,
+                original_text=original_text,
+                original_url=original_url,
+                audience_context=audience_context,
+                target_platforms=target_platforms
+            )
+            tasks.append(task)
+            task_metadata.append({
+                'topic_id': topic['topic_id'],
+                'topic_name': topic['topic_name']
+            })
+        
+        # Execute all topic pipelines in parallel
+        total_posts_expected = len(topics) * len(target_platforms)
+        posts_completed = 0
+        
+        # Use asyncio.as_completed to yield results as they come in
+        for task_coro in asyncio.as_completed(tasks):
+            try:
+                topic_result = await task_coro
+                
+                if topic_result['success']:
+                    # Stream all posts for this topic
+                    for post_result in topic_result['posts']:
+                        posts_completed += 1
+                        progress = 30 + (posts_completed / total_posts_expected) * 45  # 30-75%
+                        
+                        # Stream progress status
+                        yield self._format_sse_event("status", {
+                            "message": f"Generated post {posts_completed}/{total_posts_expected}",
+                            "stage": "parallel_processing_progress",
+                            "progress": round(progress),
+                            "post_progress": {
+                                "completed": posts_completed,
+                                "total": total_posts_expected
+                            },
+                            "timestamp": datetime.now().isoformat()
+                        })
+                        
+                        # Stream the post data for collection
+                        yield self._format_sse_event("generated_post", post_result)
+                        
+                else:
+                    # Handle topic processing errors
+                    yield self._format_sse_event("post_error", {
+                        "error": f"Topic processing failed: {topic_result['error']}",
+                        "topic_id": topic_result.get('topic_id', 'unknown'),
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    
+            except Exception as e:
+                yield self._format_sse_event("post_error", {
+                    "error": f"Topic processing exception: {str(e)}",
+                    "timestamp": datetime.now().isoformat()
+                })
+
+    async def _process_single_topic_pipeline(
+        self,
+        topic: Dict[str, Any],
+        original_text: str,
+        original_url: str,
+        audience_context: str,
+        target_platforms: List[str]
+    ) -> Dict[str, Any]:
+        """
+        Process a single topic through: emotion analysis → content generation
+        """
+        try:
+            # Step 1: Emotion analysis for this topic
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                emotion_result = await loop.run_in_executor(
+                    executor,
+                    self.emotion_analyzer.analyze_emotions,
+                    [topic],  # Pass as list since method expects list
+                    audience_context
+                )
+            
+            if not emotion_result['success'] or not emotion_result['emotion_analysis']:
+                return {
+                    'success': False,
+                    'topic_id': topic['topic_id'],
+                    'error': f"Emotion analysis failed: {emotion_result.get('error', 'No results')}"
+                }
+            
+            enhanced_topic = emotion_result['emotion_analysis'][0]  # Get first result
+            logger.info(f"📝 Topic {topic['topic_id']} Emotion: {enhanced_topic['primary_emotion']}")
+            
+            # Step 2: Content generation for all platforms
+            content_results = []
+            
+            for platform in target_platforms:
+                try:
+                    content_result = await self._generate_content_only(
+                        topic=enhanced_topic,
+                        original_text=original_text,
+                        original_url=original_url,
+                        audience_context=audience_context,
+                        platform=platform
+                    )
+                    
+                    if content_result['success']:
+                        content_results.append({
+                            "post_content": content_result['post_content'],
+                            "topic_id": enhanced_topic['topic_id'],
+                            "topic_name": enhanced_topic['topic_name'],
+                            "platform": platform,
+                            "primary_emotion": enhanced_topic.get('primary_emotion', ''),
+                            "content_strategy": content_result['content_strategy'],
+                            "processing_time": content_result['processing_time']
+                        })
+                    else:
+                        return {
+                            'success': False,
+                            'topic_id': topic['topic_id'],
+                            'error': f"Content generation failed for {platform}: {content_result.get('error', 'Unknown error')}"
+                        }
+                        
+                except Exception as e:
+                    return {
+                        'success': False,
+                        'topic_id': topic['topic_id'],
+                        'error': f"Content generation exception for {platform}: {str(e)}"
+                    }
+            
+            return {
+                'success': True,
+                'topic_id': topic['topic_id'],
+                'posts': content_results
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'topic_id': topic.get('topic_id', 'unknown'),
+                'error': f"Topic pipeline exception: {str(e)}"
+            }
+
     async def _stream_content_generation(
         self,
         enhanced_topics: List[Dict[str, Any]],

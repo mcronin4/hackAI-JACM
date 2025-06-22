@@ -78,7 +78,7 @@ function AppContent() {
   const [isContentTransitioning, setIsContentTransitioning] = useState(false);
   const [isYoutubeViewTransitioning, setIsYoutubeViewTransitioning] = useState(false);
   const [actualTranscript, setActualTranscript] = useState<string>('');
-  const [streamingStatus, setStreamingStatus] = useState<string>('');
+
   const [pipelineProgress, setPipelineProgress] = useState<number>(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -212,7 +212,6 @@ function AppContent() {
   const startStreamingPostGeneration = (body: { text: string; target_platforms: string[]; original_url?: string }) => {
     // Reset state before starting
     setPlatformPosts({ twitter: [], linkedin: [] });
-    setStreamingStatus('');
     setPipelineProgress(0);
     
     // Use fetch for streaming POST requests (EventSource only supports GET)
@@ -328,12 +327,11 @@ function AppContent() {
           
           // Update post progress for status display
           if (eventData.post_progress) {
-            setStreamingStatus(`Generated ${eventData.post_progress.completed}/${eventData.post_progress.total} posts`);
+            // Post progress is now shown via pipeline progress
           }
         } else if (eventData.message) {
           // Status update
           console.log('Status update:', eventData.message);
-          setStreamingStatus(eventData.message);
           
           // Update pipeline progress
           if (typeof eventData.progress === 'number') {
@@ -348,12 +346,10 @@ function AppContent() {
           // Error occurred
           console.error('Streaming error:', eventData.error);
           setContentBlocks([`Error: ${eventData.error}`]);
-          setStreamingStatus(`Error: ${eventData.error}`);
           setIsProcessing(false);
         } else if (eventData.total_processing_time !== undefined) {
           // Completion event
           console.log('Streaming complete');
-          setStreamingStatus('All posts generated successfully!');
           setPipelineProgress(100);
           setIsProcessing(false);
         } else {
@@ -489,7 +485,6 @@ function AppContent() {
     setEditingContent('');
     setCopySuccess(false);
     setActualTranscript('');
-    setStreamingStatus('');
     setPipelineProgress(0);
     setActivePlatformTab(selectedPlatforms[0] || 'twitter');
     setPlatformSelectionVisible(false);
@@ -894,7 +889,6 @@ function AppContent() {
                     <Loader2 className="w-6 h-6 text-teal-500 animate-spin" />
                   </div>
                   <div className="text-gray-600 text-xs space-y-2">
-                    <p>{streamingStatus || 'Processing...'}</p>
                     {/* Pipeline progress bar (0-100%) */}
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div 
