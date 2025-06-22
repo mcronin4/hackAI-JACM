@@ -82,7 +82,12 @@ function AppContent() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const youtubeInputRef = useRef<HTMLInputElement>(null);
-
+  const [isPlatformSelectionStep, setIsPlatformSelectionStep] = useState(false);
+  const [isPlatformSelectionVisible, setPlatformSelectionVisible] = useState(false);
+  const [isConfirmButtonVisible, setConfirmButtonVisible] = useState(false);
+  const [showAnimations, setShowAnimations] = useState(false);
+  const [isLayoutTransitioning, setIsLayoutTransitioning] = useState(false);
+  console.log(`showAnimations (for build error): ${showAnimations}`);
   // Check authentication status on component mount
   useEffect(() => {
     checkAuthStatus();
@@ -390,83 +395,80 @@ function AppContent() {
       });
   };
 
+  // New handleStart function
   const handleStart = () => {
-    setIsStarted(true);
-
+    // Validate input first
     if (contentType === 'youtube') {
-      // Validate YouTube URL first
       if (!content.trim() || !extractYouTubeId(content)) {
         setContentBlocks(['Error: Please enter a valid YouTube URL.']);
-        setIsProcessing(false);
+        return; // Don't proceed
+      }
+    } else {
+       if (!content.trim()) {
+        setContentBlocks(['Error: Please enter some text to generate posts from.']);
         return;
       }
+    }
+    
+    // If validation passes, show platform selection UI
+    setIsPlatformSelectionStep(true);
+    
+    // Animate platform selection in after a brief delay
+    setTimeout(() => {
+      setPlatformSelectionVisible(true);
+      setConfirmButtonVisible(true);
+    }, 50);
+  };
+
+  // Add this entire new function
+  const handleConfirm   = () => {
+    // Animate platform selection and confirm button out
+    setPlatformSelectionVisible(false);
+    setConfirmButtonVisible(false);
+    
+    // Start layout transition immediately
+    setIsLayoutTransitioning(true);
+    
+    // Wait for animation to complete before proceeding
+    setTimeout(() => {
+      // Now we start the actual processing
+      setIsPlatformSelectionStep(false);
+      setIsStarted(true);
+      setShowAnimations(true); // Enable animations for new posts
       
-      // For YouTube content, first get transcript, then generate posts
-      setIsTranscriptLoading(true);
-      
-      const youtubeBody = {
-        url: content
-      };
-      
-      console.log('Calling YouTube API:', youtubeBody);
-      
-      // Step 1: Call YouTube transcription API
-      fetch(API_URL + '/api/v1/youtube/process', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(youtubeBody)
-      })
-        .then(response => {
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-          return response.json();
+      // This part is the logic from your original handleStart function
+      if (contentType === 'youtube') {
+        setIsTranscriptLoading(true);
+        const youtubeBody = { url: content };
+        fetch(API_URL + '/api/v1/youtube/process', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(youtubeBody)
         })
-        .then(data => {
-          console.log('YouTube API response:', data);
-          
-          if (data.success) {
-            if (data.transcript) {
-              // Store the actual transcript
+          .then(response => response.json())
+          .then(data => {
+            if (data.success && data.transcript) {
               setActualTranscript(data.transcript);
               setIsTranscriptLoading(false);
-              // Step 2: Use transcript to generate posts
-              startPostGeneration(data.transcript, content);
+              startPostGeneration(data.transcript, content); // Call your existing function
             } else {
-              // Video was processed but transcription failed
-              console.warn('Video processed but transcription failed');
-              setActualTranscript('Transcription failed. This might be due to a large file size or API timeout.');
+              // ... error handling
               setIsTranscriptLoading(false);
-              setContentBlocks(['Error: Video was downloaded successfully, but transcription failed. This might be due to a large file size or API timeout. Please try with a shorter video.']);
+              setContentBlocks([`Error: ${data.error_message || 'Transcription failed.'}`]);
               setIsProcessing(false);
             }
-          } else {
-            // Handle YouTube API errors
-            console.error('YouTube API error:', data.error_message);
+          })
+          .catch(() => {
+            // ... error handling
             setIsTranscriptLoading(false);
-            setContentBlocks([`Error: Failed to process YouTube video. ${data.error_message || 'Please try again.'}`]);
+            setContentBlocks(['Error: Unable to process YouTube video.']);
             setIsProcessing(false);
-          }
-        })
-        .catch(error => {
-          console.error('Error calling YouTube API:', error);
-          setIsTranscriptLoading(false);
-          setContentBlocks(['Error: Unable to process YouTube video. Please check the URL and try again.']);
-          setIsProcessing(false);
-        });
-    } else {
-      // Validate text content
-      if (!content.trim()) {
-        setContentBlocks(['Error: Please enter some text to generate posts from.']);
-        setIsProcessing(false);
-        return;
+          });
+      } else {
+        // For text content, start post generation immediately
+        startPostGeneration(); // Call your existing function
       }
-      
-      // For text content, start post generation immediately
-      startPostGeneration();
-    }
+    }, 300); // Wait for fade-out animation
   };
 
   const handleReset = () => {
@@ -483,6 +485,11 @@ function AppContent() {
     setStreamingStatus('');
     setPipelineProgress(0);
     setActivePlatformTab(selectedPlatforms[0] || 'twitter');
+    setPlatformSelectionVisible(false);
+    setConfirmButtonVisible(false);
+    setIsLayoutTransitioning(false);
+    setIsPlatformSelectionStep(false);
+    setShowAnimations(false);
   };
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -631,13 +638,9 @@ function AppContent() {
 
       <div className="flex flex-1 min-h-0">
         {/* Content Section */}
-        <div className={`transition-all duration-500 ${isStarted ? 'w-1/2' : 'w-2/3'} flex flex-col min-h-0`}>
+        <div className={`transition-all duration-500 ${isLayoutTransitioning || isStarted ? 'w-1/2' : 'w-2/3'} flex flex-col min-h-0`}>
           {/* Header - moves up when YouTube video is present or when started */}
-          <div className={`transition-all duration-500 ${
-            isStarted || (contentType === 'youtube' && hasValidYouTubeUrl)
-              ? 'mb-4' 
-              : 'mt-32 mb-8'
-          } flex-shrink-0`}>
+          <div className={`transition-all duration-500 ${ isStarted || isPlatformSelectionStep || (contentType === 'youtube' && hasValidYouTubeUrl) ? 'mb-4' : 'mt-32 mb-8' } flex-shrink-0`}>
             <div className="flex items-end justify-between mb-8">
               <div className="flex items-fi">
                 <Image 
@@ -670,15 +673,51 @@ function AppContent() {
                 </div>
               </div>
               
-              {/* Start Button */}
-              {content.trim() && !isStarted && (
-                <button 
+              {/* Start Button - Only show when not in platform selection step */}
+              {content.trim() && !isStarted && !isPlatformSelectionStep && (
+                <button
                   onClick={handleStart}
-                  className="bg-gradient-to-r from-teal-600 to-teal-400 text-white px-4 py-2 rounded-lg hover:bg-teal-400 transition-all transform hover:scale-105 flex items-center gap-2 text-sm font-semibold"
+                  className="cursor-pointer bg-gradient-to-r from-teal-600 to-teal-400 text-white px-4 py-2 rounded-lg hover:bg-teal-400 transition-all transform hover:scale-105 flex items-center gap-2 text-sm font-semibold"
                 >
                   Start
                   <ArrowRight className="w-4 h-4" />
                 </button>
+              )}
+
+              {/* Platform Selection - Only show in platform selection step */}
+                  {isPlatformSelectionStep && (
+                    <div className={`flex items-center gap-4 transition-all duration-300 ${
+                      isPlatformSelectionVisible ? 'opacity-100 transform translate-y-0' : 'opacity-0 transform -translate-y-4'
+                    }`}>
+                      {isPlatformSelectionStep && (
+                    <div className={`flex justify-end items-center transition-all duration-300 ${
+                      isConfirmButtonVisible ? 'opacity-100 transform translate-y-0' : 'opacity-0 transform translate-y-4'
+                    }`}>
+                      <button
+                        onClick={handleConfirm}
+                        className="cursor-pointer bg-white border-2 border-teal-500 text-teal-500 px-4 py-2 rounded-lg hover:bg-teal-50 transition-all transform hover:scale-105 flex items-center gap-2 text-sm font-semibold"
+                      >
+                        Confirm
+                        {/* <ArrowRight className="w-4 h-4" /> */}
+                      </button>
+                    </div>
+                  )}
+                  <p className="text-xs text-gray-500">Select platforms:</p>
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={selectedPlatforms.includes('twitter')} onChange={() => handlePlatformToggle('twitter')} className="sr-only"/>
+                      <div className={`w-8 h-8 rounded-md flex items-center justify-center transition-all ${selectedPlatforms.includes('twitter') ? 'bg-black text-white' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
+                        <XLogo className="w-4 h-4" />
+                      </div>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={selectedPlatforms.includes('linkedin')} onChange={() => handlePlatformToggle('linkedin')} className="sr-only"/>
+                      <div className={`w-8 h-8 rounded-md flex items-center justify-center transition-all ${selectedPlatforms.includes('linkedin') ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
+                        <LinkedInLogo className="w-4 h-4" />
+                      </div>
+                    </label>
+                  </div>
+                </div>
               )}
             </div>
           </div>
@@ -690,12 +729,12 @@ function AppContent() {
               {!(isStarted && contentType === 'youtube') && (
                 <button
                   onClick={() => handleContentTypeChange('text')}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
+                  className={`cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
                     contentType === 'text'
                       ? 'bg-white text-teal-600 shadow-sm'
                       : 'text-gray-600 hover:text-gray-800'
                   }`}
-                  disabled={isProcessing}
+                  disabled={isProcessing || isPlatformSelectionStep}
                 >
                   <FileText className="w-3 h-3" />
                   Text
@@ -706,7 +745,7 @@ function AppContent() {
               {!(isStarted && contentType === 'text') && (
                 <button
                   onClick={() => handleContentTypeChange('youtube')}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
+                  className={`cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
                     contentType === 'youtube'
                       ? 'bg-white text-red-600 shadow-sm'
                       : 'text-gray-600 hover:text-gray-800'
@@ -719,42 +758,14 @@ function AppContent() {
               )}
             </div>
 
-            {/* Platform Selector */}
-            {!isStarted && (
-              <div className="flex bg-gray-100 rounded-md p-0.5 w-fit">
-                <button
-                  onClick={() => handlePlatformToggle('twitter')}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
-                    selectedPlatforms.includes('twitter')
-                      ? 'bg-white text-black shadow-sm'
-                      : 'text-gray-600 hover:text-gray-800'
-                  }`}
-                  disabled={isProcessing}
-                >
-                  <XLogo className="w-3 h-3" />
-                  X
-                </button>
-                <button
-                  onClick={() => handlePlatformToggle('linkedin')}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
-                    selectedPlatforms.includes('linkedin')
-                      ? 'bg-white text-blue-600 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-800'
-                  }`}
-                  disabled={isProcessing}
-                >
-                  <LinkedInLogo className="w-3 h-3" />
-                  LinkedIn
-                </button>
-              </div>
-            )}
+            
 
             {/* Video/Transcript Toggle - Only show when YouTube is selected, started, and has valid URL */}
             {isStarted && contentType === 'youtube' && hasValidYouTubeUrl && (
               <div className="flex bg-gray-100 rounded-md p-0.5 w-fit">
                 <button
                   onClick={() => handleYoutubeViewTypeChange('video')}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
+                  className={`cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
                     youtubeViewType === 'video'
                       ? 'bg-white text-blue-600 shadow-sm'
                       : 'text-gray-600 hover:text-gray-800'
@@ -766,7 +777,7 @@ function AppContent() {
                 </button>
                 <button
                   onClick={() => handleYoutubeViewTypeChange('transcript')}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
+                  className={`cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
                     youtubeViewType === 'transcript'
                       ? 'bg-white text-purple-600 shadow-sm'
                       : 'text-gray-600 hover:text-gray-800'
@@ -788,10 +799,10 @@ function AppContent() {
                 value={content}
                 onChange={handleContentChange}
                 placeholder={getPlaceholderText()}
-                className={`w-full flex-1 min-h-0 p-6 rounded-lg resize-none focus:outline-none shadow-lg text-sm leading-relaxed text-left bg-white text-black transition-all duration-300 ${
+                className={`w-full flex-1 min-h-0 p-6 rounded-lg resize-none focus:outline-none shadow-[0_0_15px_rgba(0,0,0,0.1)] text-sm leading-relaxed text-left bg-white text-black transition-all duration-300 ${
                   isContentTransitioning ? 'opacity-0' : 'opacity-100'
                 }`}
-                disabled={isProcessing}
+                disabled={isProcessing || isPlatformSelectionStep}
               />
             ) : (
               <div className={`flex-1 min-h-0 flex flex-col transition-all duration-300 ${
@@ -804,8 +815,8 @@ function AppContent() {
                   value={content}
                   onChange={handleYouTubeInputChange}
                   placeholder={getPlaceholderText()}
-                  className="w-full p-4 rounded-lg focus:outline-none shadow-lg text-sm bg-white text-black flex-shrink-0 h-16 border border-gray-200"
-                  disabled={isProcessing}
+                  className="w-full p-4 rounded-lg focus:outline-none shadow-[0_0_15px_rgba(0,0,0,0.1)] text-sm bg-white text-black flex-shrink-0 h-16"
+                  disabled={isProcessing || isPlatformSelectionStep}
                 />
                 
                 {/* YouTube Content Area - Video or Transcript */}
@@ -937,7 +948,7 @@ function AppContent() {
                         <button
                           key={platform}
                           onClick={() => handlePlatformTabChange(platform)}
-                          className={`flex items-center justify-center gap-1.5 px-4 py-1.5 rounded text-xs font-medium transition-all min-w-[80px] ${
+                          className={`cursor-pointer flex items-center justify-center gap-1.5 px-4 py-1.5 rounded text-xs font-medium transition-all min-w-[80px] ${
                             activePlatformTab === platform
                               ? `bg-white ${platformColor} shadow-sm`
                               : 'text-gray-600 hover:text-gray-800'
@@ -957,16 +968,16 @@ function AppContent() {
                 const platformBg = activePlatformTab === 'twitter' ? 'bg-gray-50 border-gray-200' : 'bg-blue-50 border-blue-200';
 
                 return (
-                  <div className={`flex-1 min-h-0 ${platformBg} rounded-lg border p-4 relative overflow-hidden`}>
+                  <div className={`flex-1 min-h-0 ${platformBg} rounded-lg border p-4 relative overflow-visible`}>
                     {/* Normal view - scrollable platform posts */}
                     <div className={`h-full transition-all duration-300 ${
                       expandedPost?.platform === activePlatformTab ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
                     }`}>
-                      <div className="h-full overflow-y-auto space-y-3 pr-2">
+                      <div className="h-full space-y-3 pr-2">
                         {activePosts.map((post, index) => (
                           <div
                             key={index}
-                            className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm animate-fade-in flex-shrink-0 cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-md hover:border-teal-300"
+                            className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm animate-fade-in flex-shrink-0 cursor-pointer transition-all duration-200 hover:scale-103 hover:shadow-md hover:border-teal-300"
                             style={{
                               animationDelay: `${index * 0.1}s`,
                               animationFillMode: 'both'
@@ -988,7 +999,7 @@ function AppContent() {
                           contentBlocks.map((block, index) => (
                             <div
                               key={`legacy-${index}`}
-                              className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm animate-fade-in flex-shrink-0 cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-md hover:border-teal-300"
+                              className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm animate-fade-in flex-shrink-0 cursor-pointer transition-all duration-200 hover:scale-102 hover:shadow-md hover:border-teal-300"
                               style={{
                                 animationDelay: `${index * 0.1}s`,
                                 animationFillMode: 'both'
@@ -1015,7 +1026,7 @@ function AppContent() {
 
                     {/* Expanded view - fills the entire platform container */}
                     {expandedPost?.platform === activePlatformTab && (
-                      <div className={`absolute inset-0 text-sm bg-white shadow-lg border border-gray-200 rounded-lg flex transition-all duration-300 ${
+                      <div className={`absolute inset-0 text-sm bg-white shadow-lg border border-gray-200 rounded-lg flex transition-all duration-300 overflow-hidden ${
                         isTransitioning ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
                       }`}>
                         {/* Main content area */}
@@ -1038,7 +1049,7 @@ function AppContent() {
                           {/* Close button */}
                           <button
                             onClick={handleCloseExpanded}
-                            className="p-3 hover:bg-gray-200 rounded-lg transition-colors group"
+                            className="cursor-pointer p-3 hover:bg-gray-200 rounded-lg transition-colors group"
                             title="Close (ESC)"
                           >
                             <X className="w-3 h-3 text-gray-500 group-hover:text-gray-700" />
@@ -1047,7 +1058,7 @@ function AppContent() {
                           {/* Send button */}
                           <button
                             onClick={handleSend}
-                            className="p-3 bg-gradient-to-r from-teal-600 to-teal-400 hover:bg-teal-500 rounded-lg transition-colors group"
+                            className="cursor-pointer p-3 bg-gradient-to-r from-teal-600 to-teal-400 hover:bg-teal-500 rounded-lg transition-colors group"
                             title="Send"
                           >
                             <Send className="w-3 h-3 text-white" />
@@ -1056,7 +1067,7 @@ function AppContent() {
                           {/* Copy button */}
                           <button
                             onClick={handleCopy}
-                            className={`p-3 rounded-lg transition-colors group ${
+                            className={`cursor-pointer p-3 rounded-lg transition-colors group ${
                               copySuccess 
                                 ? 'bg-green-100 hover:bg-green-200' 
                                 : 'hover:bg-gray-200'
