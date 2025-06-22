@@ -28,12 +28,12 @@ class TwitterConfig(PlatformConfig):
 
 
 class LinkedInConfig(PlatformConfig):
-    """LinkedIn configuration for future expansion"""
+    """LinkedIn configuration for professional content"""
     character_limit: int = 3000
     max_hashtags: int = 5
     supports_threads: bool = False
     supports_links: bool = True
-    tone_guidelines: str = "Professional, insightful, and thought-provoking."
+    tone_guidelines: str = "Professional, insightful, and thought-provoking. Focus on actionable insights, professional development, and sparking meaningful workplace discussions. Avoid overly casual language while maintaining authenticity."
     formatting_rules: Dict[str, Any] = {
         "hashtag_placement": "end",
         "link_placement": "end",

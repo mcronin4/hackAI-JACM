@@ -24,6 +24,7 @@ class ContentGenerationOnlyService:
         original_text: str,
         topics: List[EnhancedTopic], 
         original_url: str,
+        audience_context: str = "",
         target_platforms: List[str] = None
     ) -> ContentGenerationOnlyResponse:
         """
@@ -33,6 +34,7 @@ class ContentGenerationOnlyService:
             original_text: The original long-form text
             topics: List of enhanced topics with emotion data
             original_url: URL of the original content
+            audience_context: Target audience context for content generation
             target_platforms: List of target platforms (defaults to ["twitter"])
             
         Returns:
@@ -75,7 +77,8 @@ class ContentGenerationOnlyService:
                             topic=topic_dict,
                             original_text=original_text,
                             original_url=original_url,
-                            platform=platform
+                            platform=platform,
+                            audience_context=audience_context
                         )
                         
                         content = GeneratedContent(
