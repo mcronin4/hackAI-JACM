@@ -99,9 +99,13 @@ class ContentPipelineService:
                 )
             
             # Step 3: Generate content for each enhanced topic and platform
-            generated_posts = []
+            platform_posts = {}  # Organize posts by platform
             successful_generations = 0
             failed_generations = []
+            
+            # Initialize platform_posts structure
+            for platform in target_platforms:
+                platform_posts[platform] = []
             
             for enhanced_topic in emotion_result['emotion_analysis']:
                 for platform in target_platforms:
@@ -114,7 +118,16 @@ class ContentPipelineService:
                         )
                         
                         if content_result['success']:
-                            generated_posts.append(content_result['final_post'])
+                            # Store post with metadata for each platform
+                            post_data = {
+                                'post_content': content_result['final_post'],
+                                'topic_id': enhanced_topic['topic_id'],
+                                'topic_name': enhanced_topic['topic_name'],
+                                'primary_emotion': enhanced_topic['primary_emotion'],
+                                'content_strategy': content_result['content_strategy'],
+                                'processing_time': content_result['processing_time']
+                            }
+                            platform_posts[platform].append(post_data)
                             successful_generations += 1
                         else:
                             failed_generations.append(
@@ -140,7 +153,8 @@ class ContentPipelineService:
             
             return {
                 'success': True,
-                'generated_posts': generated_posts,
+                'platform_posts': platform_posts,  # NEW: Posts organized by platform
+                'generated_posts': [post['post_content'] for posts in platform_posts.values() for post in posts],  # LEGACY: Flat list for backwards compatibility
                 'total_topics': topic_result['total_topics'],
                 'successful_generations': successful_generations,
                 'processing_time': total_processing_time,
@@ -165,7 +179,8 @@ class ContentPipelineService:
         return {
             'success': False,
             'error': error_message,
-            'generated_posts': [],
+            'platform_posts': {},  # NEW: Empty platform posts structure
+            'generated_posts': [],  # LEGACY: Empty list for backwards compatibility
             'total_topics': 0,
             'successful_generations': 0,
             'processing_time': processing_time

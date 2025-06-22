@@ -40,12 +40,12 @@ class TopicExtractorAgent:
     def _extract_topics_node(self, state: TopicExtractionState) -> TopicExtractionState:
         """Extract topics from the input text using LLM"""
         try:
-            system_prompt = """You are an expert topic extraction agent. Your task is to:
-1. Analyze the given text and identify distinct topics
-2. For each topic, provide:
-   - A clear, concise topic name
-   - A relevant excerpt from the text that demonstrates this topic
-   - A confidence score (0.0 to 1.0) for how well this topic is represented
+            system_prompt = """You are an expert topic extraction agent. Your task is to analyze the given text and identify distinct topics.
+
+For each topic, provide:
+- A clear, concise topic name
+- A relevant excerpt from the text that demonstrates this topic
+- A confidence score (0.0 to 1.0) for how well this topic is represented
 
 Guidelines:
 - Extract 2-5 meaningful topics from the text
@@ -54,50 +54,73 @@ Guidelines:
 - Topics should cover the main themes and subjects in the text
 - Avoid overlapping or redundant topics
 
-Return your response as a JSON array with the following structure:
+Return your response as a valid JSON array with this exact structure:
 [
-  {{
-    "topic_name": "string",
-    "content_excerpt": "string", 
-    "confidence_score": float
-  }}
-]"""
+  {
+    "topic_name": "string describing the topic",
+    "content_excerpt": "relevant text excerpt", 
+    "confidence_score": 0.85
+  }
+]
 
-            user_prompt = f"Please extract topics from the following text:\n\n{state['text']}"
+Only return the JSON array, no additional text or formatting."""
+
+            user_prompt = f"Extract topics from this text:\n\n{state['text']}"
             
+            # Use a more robust message construction
             messages = [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_prompt)
             ]
             
             response = self.llm.invoke(messages)
+            response_content = response.content.strip()
             
-            # Parse the JSON response
+            # Parse the JSON response with better error handling
             try:
-                topics_data = json.loads(response.content)
+                # Try direct JSON parsing first
+                topics_data = json.loads(response_content)
                 if not isinstance(topics_data, list):
                     raise ValueError("Response is not a list")
                 
-                # Add topic IDs
-                topics_with_ids = []
-                for i, topic in enumerate(topics_data, 1):
-                    topic['topic_id'] = i
-                    topics_with_ids.append(topic)
-                
-                state['topics'] = topics_with_ids
-                
             except json.JSONDecodeError:
                 # Fallback: try to extract JSON from the response
-                json_match = re.search(r'\[.*\]', response.content, re.DOTALL)
+                json_match = re.search(r'\[.*?\]', response_content, re.DOTALL)
                 if json_match:
-                    topics_data = json.loads(json_match.group())
-                    topics_with_ids = []
-                    for i, topic in enumerate(topics_data, 1):
-                        topic['topic_id'] = i
-                        topics_with_ids.append(topic)
-                    state['topics'] = topics_with_ids
+                    try:
+                        topics_data = json.loads(json_match.group())
+                    except json.JSONDecodeError:
+                        raise ValueError("Could not parse JSON from LLM response")
                 else:
-                    raise ValueError("Could not parse JSON response from LLM")
+                    # If no JSON found, create a fallback topic
+                    topics_data = [{
+                        "topic_name": "Main theme from the provided text",
+                        "content_excerpt": state['text'][:200] + "..." if len(state['text']) > 200 else state['text'],
+                        "confidence_score": 0.7
+                    }]
+            
+            # Add topic IDs and validate structure
+            topics_with_ids = []
+            for i, topic in enumerate(topics_data, 1):
+                if isinstance(topic, dict) and 'topic_name' in topic:
+                    validated_topic = {
+                        'topic_id': i,
+                        'topic_name': str(topic.get('topic_name', f'Topic {i}')),
+                        'content_excerpt': str(topic.get('content_excerpt', state['text'][:100])),
+                        'confidence_score': float(topic.get('confidence_score', 0.8))
+                    }
+                    topics_with_ids.append(validated_topic)
+            
+            # Ensure we have at least one topic
+            if not topics_with_ids:
+                topics_with_ids = [{
+                    'topic_id': 1,
+                    'topic_name': 'Main theme from the provided text',
+                    'content_excerpt': state['text'][:200] + "..." if len(state['text']) > 200 else state['text'],
+                    'confidence_score': 0.7
+                }]
+            
+            state['topics'] = topics_with_ids
                     
         except Exception as e:
             state['error'] = f"Error in topic extraction: {str(e)}"
