@@ -12,6 +12,7 @@ class ContentGenerationState(TypedDict):
     topics: List[Dict[str, Any]]
     target_platforms: List[str]
     original_url: str
+    audience_context: str
     current_topic: Dict[str, Any]
     content_strategy: str
     generated_content: str
@@ -19,7 +20,6 @@ class ContentGenerationState(TypedDict):
     final_post: str
     processing_time: float
     error: str
-
 
 class ContentGeneratorAgent:
     def __init__(self, model_name: str = "gemini-2.5-flash", temperature: float = 0.3):
@@ -166,6 +166,10 @@ class ContentGeneratorAgent:
 {state['original_text']}
 </originalContent>
 
+<targetAudience>
+{state.get('audience_context', 'No audience context provided')}
+</targetAudience>
+
 <coreIdea>
 {current_topic['topic_name']}
 </coreIdea>
@@ -309,7 +313,8 @@ ABSOLUTE REQUIREMENTS:
         topic: Dict[str, Any], 
         original_text: str, 
         original_url: str = "", 
-        platform: str = "twitter"
+        platform: str = "twitter",
+        audience_context: str = ""
     ) -> Dict[str, Any]:
         """Main method to generate content for a single topic"""
         start_time = datetime.now()
@@ -329,6 +334,7 @@ ABSOLUTE REQUIREMENTS:
             original_text=original_text,
             topics=[topic],
             target_platforms=[platform],
+            audience_context=audience_context,
             original_url=original_url,
             current_topic={},
             content_strategy="",

@@ -17,7 +17,13 @@ from app.models import (
     PlatformStatusResponse,
     AllPlatformsStatusResponse,
     PlatformPosts,
-    PlatformPost
+    PlatformPost,
+    TwitterContextRequest,
+    TwitterContextResponse,
+    AudienceExtractionOnlyRequest,
+    AudienceExtractionOnlyResponse,
+    StyleMatchingOnlyRequest,
+    StyleMatchingOnlyResponse
 )
 from app.services.content_pipeline import ContentPipelineService, ContentPipelineError
 from app.services.streaming_pipeline import StreamingPipelineService, StreamingPipelineError
@@ -28,6 +34,9 @@ from app.services.youtube_service import YouTubeService, YouTubeConversionError
 from app.services.social_posting_service import SocialPostingService
 from app.services.social_media.base_platform import PostRequest
 from app.services.social_media.platform_factory import PlatformFactory
+from app.services.user_context_service import UserContextService, UserContextError
+from app.services.audience_service import AudienceExtractionService, AudienceExtractionError
+from app.services.style_matching_service import StyleMatchingService, StyleMatchingError
 from typing import Dict, Any
 import logging
 import json
@@ -67,6 +76,21 @@ def get_emotion_service() -> EmotionTargetingService:
 def get_content_service() -> ContentGenerationOnlyService:
     """Dependency injection for content generation service"""
     return ContentGenerationOnlyService()
+
+
+def get_user_context_service() -> UserContextService:
+    """Dependency injection for user context service"""
+    return UserContextService()
+
+
+def get_audience_service() -> AudienceExtractionService:
+    """Dependency injection for audience extraction service"""
+    return AudienceExtractionService()
+
+
+def get_style_matching_service() -> StyleMatchingService:
+    """Dependency injection for style matching service"""
+    return StyleMatchingService()
 
 
 # INDIVIDUAL AGENT ENDPOINTS
@@ -201,6 +225,7 @@ async def generate_content_only(
             original_text=request.original_text,
             topics=request.topics,
             original_url=request.original_url,
+            audience_context=request.audience_context,
             target_platforms=request.target_platforms
         )
         
@@ -248,7 +273,7 @@ async def generate_posts(
     pipeline_service: ContentPipelineService = Depends(get_pipeline_service)
 ) -> ContentPipelineResponse:
     """
-    Generate social media posts from text using the unified pipeline.
+    Generate social media posts from text using the unified pipeline. This will start by gathering context posts from the database if a user was specified.
     
     The pipeline will:
     1. Extract topics from the input text
@@ -258,16 +283,21 @@ async def generate_posts(
     """
     try:
         logger.info(f"Processing pipeline request for {len(request.text)} characters of text")
+
+        context_posts = {}
+        if request.user_id:
+            for platform in request.target_platforms:
+                platform_context = await pipeline_service.get_user_context_posts(request.user_id, platform)
+                context_posts[platform] = sorted([post["post_content"] for post in platform_context], key=len, reverse=True)[:10] # Sort by length and take the longest 10
         
         result = await pipeline_service.process_content(
             text=request.text,
             original_url=request.original_url,
+            context_posts=context_posts,
             target_platforms=request.target_platforms
         )
         
-        if result['success']:
-            logger.info(f"Successfully generated {len(result['generated_posts'])} posts from {result['total_topics']} topics")
-            
+        if result['success']:            
             # Create platform-separated posts structure
             platform_posts = PlatformPosts()
             
@@ -469,7 +499,9 @@ async def health_check(
     pipeline_service: ContentPipelineService = Depends(get_pipeline_service),
     topic_service: TopicExtractionService = Depends(get_topic_service),
     emotion_service: EmotionTargetingService = Depends(get_emotion_service),
-    content_service: ContentGenerationOnlyService = Depends(get_content_service)
+    content_service: ContentGenerationOnlyService = Depends(get_content_service),
+    audience_service: AudienceExtractionService = Depends(get_audience_service),
+    style_service: StyleMatchingService = Depends(get_style_matching_service)
 ) -> Dict[str, Any]:
     """Health check endpoint to verify all service statuses"""
     try:
@@ -477,9 +509,11 @@ async def health_check(
             "status": "healthy",
             "service": "content-pipeline-api",
             "agents": {
+                "audience_extractor": audience_service.get_agent_status(),
                 "topic_extractor": topic_service.get_agent_status(),
                 "emotion_targeting": emotion_service.get_agent_status(),
                 "content_generator": content_service.get_agent_status(),
+                "style_matcher": style_service.get_agent_status(),
                 "pipeline": pipeline_service.get_pipeline_status()
             },
             "timestamp": "2024-01-01T00:00:00Z"  # You might want to use actual timestamp
