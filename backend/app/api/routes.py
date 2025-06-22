@@ -309,6 +309,51 @@ async def generate_posts(
     summary="Process YouTube Video to Audio and Transcript",
     description="Accepts a YouTube URL, downloads the audio, converts it to MP3, and generates a transcript."
 )
+async def process_youtube_video(
+    request: YouTubeProcessRequest,
+    youtube_service: YouTubeService = Depends(get_youtube_service)
+) -> YouTubeProcessResponse:
+    """
+    This endpoint orchestrates the entire process:
+    1.  Takes a YouTube URL.
+    2.  Uses `yt-dlp` to download the best audio stream.
+    3.  Converts the audio to an MP3 file.
+    4.  Uses Deepgram to transcribe the MP3.
+    5.  Returns the transcript and other metadata.
+    """
+    try:
+        logger.info(f"Received request to process YouTube URL: {request.url}")
+        
+        # The youtube_service.convert_to_mp3 now handles the entire pipeline
+        result = youtube_service.convert_to_mp3(request.url)
+        
+        if not result.get("success"):
+            # Raise an HTTPException to be caught and returned as a proper error response
+            raise HTTPException(
+                status_code=400,
+                detail=result.get("error", "An unknown error occurred during processing.")
+            )
+
+        logger.info(f"Successfully processed video: {result.get('video_title')}")
+        
+        return YouTubeProcessResponse(
+            success=True,
+            video_id=result.get("video_id"),
+            video_title=result.get("video_title"),
+            video_duration=result.get("video_duration"),
+            mp3_file_path=result.get("audio_stream", {}).get("url"),
+            transcript=result.get("transcript"),
+            processing_time_seconds=result.get("processing_time"),
+            error_message=None
+        )
+        
+    except YouTubeConversionError as e:
+        logger.error(f"A known error occurred during YouTube processing: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"An unexpected server error occurred: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal server error occurred.")
+
 
 async def get_supported_platforms(
     pipeline_service: ContentPipelineService = Depends(get_pipeline_service)
@@ -355,50 +400,6 @@ async def get_youtube_example_response() -> YouTubeProcessResponse:
         processing_time_seconds=2.45,
         error_message=None
     )
-async def process_youtube_video(
-    request: YouTubeProcessRequest,
-    youtube_service: YouTubeService = Depends(get_youtube_service)
-) -> YouTubeProcessResponse:
-    """
-    This endpoint orchestrates the entire process:
-    1.  Takes a YouTube URL.
-    2.  Uses `yt-dlp` to download the best audio stream.
-    3.  Converts the audio to an MP3 file.
-    4.  Uses Deepgram to transcribe the MP3.
-    5.  Returns the transcript and other metadata.
-    """
-    try:
-        logger.info(f"Received request to process YouTube URL: {request.url}")
-        
-        # The youtube_service.convert_to_mp3 now handles the entire pipeline
-        result = youtube_service.convert_to_mp3(request.url)
-        
-        if not result.get("success"):
-            # Raise an HTTPException to be caught and returned as a proper error response
-            raise HTTPException(
-                status_code=400,
-                detail=result.get("error", "An unknown error occurred during processing.")
-            )
-
-        logger.info(f"Successfully processed video: {result.get('video_title')}")
-        
-        return YouTubeProcessResponse(
-            success=True,
-            video_id=result.get("video_id"),
-            video_title=result.get("video_title"),
-            video_duration=result.get("video_duration"),
-            mp3_file_path=result.get("audio_stream", {}).get("url"),
-            transcript=result.get("transcript"),
-            processing_time_seconds=result.get("processing_time"),
-            error_message=None
-        )
-        
-    except YouTubeConversionError as e:
-        logger.error(f"A known error occurred during YouTube processing: {e}", exc_info=True)
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"An unexpected server error occurred: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An internal server error occurred.")
 
 
 @router.get(
