@@ -1,34 +1,43 @@
 from app.agents.topic_extractor import TopicExtractorAgent
 from app.agents.emotion_targeting import EmotionTargetingAgent
 from app.agents.content_generator import ContentGeneratorAgent
+from app.services.audience_service import AudienceExtractionService
+from app.services.style_matching_service import StyleMatchingService
+from app.database.context_operations import ContextPostsDB
 from typing import Dict, List, Any, Optional, AsyncGenerator
 import os
 from dotenv import load_dotenv
 from datetime import datetime
 import asyncio
 import json
+import logging
 from concurrent.futures import ThreadPoolExecutor
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 
 class StreamingPipelineService:
     """
     Streaming service that processes content and yields posts as they're completed.
     
-    Flow: Text → Topics → Enhanced Topics (with emotions) → Content (streamed as ready)
+    Flow: Text → Audience → Topics → Enhanced Topics (with emotions + audience) → Content → Style Matching → Final Output (streamed as ready)
     """
     
     def __init__(self):
-        # Initialize all three agents with configuration from environment
-        model_name = os.getenv("GOOGLE_MODEL_NAME", "gemini-2.5-flash")
+        # Initialize all five agents with configuration from environment
+        model_name = os.getenv("GOOGLE_MODEL_NAME", "gemini-2.5-pro")
         temperature = float(os.getenv("GOOGLE_TEMPERATURE", "0.3"))
+        
+        self.audience_extractor = AudienceExtractionService()
+        self.context_db = ContextPostsDB()
+        self.style_matcher = StyleMatchingService()
         
         self.topic_extractor = TopicExtractorAgent(
             model_name=model_name,
             temperature=0.1  # Lower temperature for topic extraction
         )
-        
+
         self.emotion_analyzer = EmotionTargetingAgent(
             model_name=model_name,
             temperature=0.1  # Lower temperature for emotion analysis
@@ -42,16 +51,18 @@ class StreamingPipelineService:
     async def stream_posts(
         self,
         text: str,
-        original_url: Optional[str] = None,
-        target_platforms: Optional[List[str]] = None
+        context_posts: Dict[str, List[str]] = {},
+        target_platforms: Optional[List[str]] = None,
+        original_url: Optional[str] = None
     ) -> AsyncGenerator[str, None]:
         """
         Stream social media posts as they're generated through the pipeline.
         
         Args:
             text: The original text to process
-            original_url: URL of the original content (optional)
+            context_posts: Context posts for style matching (maps platform to posts)
             target_platforms: List of target platforms (default: ["twitter"])
+            original_url: URL of the original content (optional)
             
         Yields:
             SSE-formatted strings with post data or status updates
@@ -79,11 +90,39 @@ class StreamingPipelineService:
                 "timestamp": datetime.now().isoformat()
             })
             
-            # Step 1: Extract topics (0-25%)
+            # Step 1: Extract audience (0-15%)
+            yield self._format_sse_event("status", {
+                "message": "Analyzing target audience...",
+                "stage": "audience_extraction",
+                "progress": 5,
+                "timestamp": datetime.now().isoformat()
+            })
+            
+            audience_result = await self.audience_extractor.extract_audience(text)
+            
+            if not audience_result['success']:
+                yield self._format_sse_event("error", {
+                    "error": f"Audience extraction failed: {audience_result['error']}",
+                    "stage": "audience_extraction"
+                })
+                return
+            
+            audience_context = audience_result.get('audience_summary', '')
+            logger.info(f"✅ Step 1/5 - Audience extraction completed in {audience_result['processing_time']:.2f}s")
+            logger.info(f"📝 Audience Summary: {audience_context[:200]}{'...' if len(audience_context) > 200 else ''}")
+            
+            yield self._format_sse_event("status", {
+                "message": "Audience analysis complete",
+                "stage": "audience_extraction_complete", 
+                "progress": 15,
+                "timestamp": datetime.now().isoformat()
+            })
+            
+            # Step 2: Extract topics (15-30%)
             yield self._format_sse_event("status", {
                 "message": "Extracting topics...",
                 "stage": "topic_extraction",
-                "progress": 5,
+                "progress": 20,
                 "timestamp": datetime.now().isoformat()
             })
             
@@ -104,23 +143,30 @@ class StreamingPipelineService:
                 return
             
             topics_found = len(topic_result['topics'])
+            logger.info(f"✅ Step 2/5 - Topic extraction completed in {topic_result['processing_time']:.2f}s, extracted {topic_result['total_topics']} topics")
+            for i, topic in enumerate(topic_result['topics'], 1):
+                logger.info(f"📝 Topic {i}: {topic['topic_name']}")
+            
             yield self._format_sse_event("status", {
                 "message": f"Found {topics_found} topics",
                 "stage": "topic_extraction_complete",
                 "topics_count": topics_found,
-                "progress": 25,
-                "timestamp": datetime.now().isoformat()
-            })
-            
-            # Step 2: Analyze emotions for the extracted topics (25-50%)
-            yield self._format_sse_event("status", {
-                "message": "Analyzing emotions...",
-                "stage": "emotion_analysis",
                 "progress": 30,
                 "timestamp": datetime.now().isoformat()
             })
             
-            emotion_result = self.emotion_analyzer.analyze_emotions(topic_result['topics'])
+            # Step 3: Analyze emotions for the extracted topics with audience context (30-45%)
+            yield self._format_sse_event("status", {
+                "message": "Analyzing emotions...",
+                "stage": "emotion_analysis",
+                "progress": 35,
+                "timestamp": datetime.now().isoformat()
+            })
+            
+            emotion_result = self.emotion_analyzer.analyze_emotions(
+                topics=topic_result['topics'],
+                audience_context=audience_context
+            )
             
             if not emotion_result['success']:
                 yield self._format_sse_event("error", {
@@ -139,21 +185,56 @@ class StreamingPipelineService:
             enhanced_topics = emotion_result['emotion_analysis']
             total_posts_expected = len(enhanced_topics) * len(target_platforms)
             
+            logger.info(f"✅ Step 3/5 - Emotion analysis completed in {emotion_result['processing_time']:.2f}s, analyzed {len(emotion_result['emotion_analysis'])} topics")
+            for i, enhanced_topic in enumerate(emotion_result['emotion_analysis'], 1):
+                logger.info(f"📝 Topic {i} Emotion: {enhanced_topic['primary_emotion']} - {enhanced_topic['reasoning'][:100]}{'...' if len(enhanced_topic['reasoning']) > 100 else ''}")
+            
             yield self._format_sse_event("status", {
                 "message": f"Emotion analysis complete. Generating {total_posts_expected} posts...",
                 "stage": "content_generation_start",
                 "total_posts_expected": total_posts_expected,
                 "platforms": target_platforms,
-                "progress": 50,
+                "progress": 45,
                 "timestamp": datetime.now().isoformat()
             })
             
-            # Step 3: Generate content in parallel and stream as completed
+            # Step 4: Generate content in parallel (45-75%) - DON'T stream posts yet
+            generated_posts = []
+            content_generation_time = 0
+            
             async for event in self._stream_content_generation(
                 enhanced_topics=enhanced_topics,
                 original_text=text,
                 original_url=original_url,
+                audience_context=audience_context,
                 target_platforms=target_platforms
+            ):
+                if event.startswith('event: generated_post\n'):
+                    # Extract post data and store for style matching - DON'T yield to user yet
+                    import json
+                    data_line = event.split('\n')[1]  # Get the data line
+                    post_data = json.loads(data_line[5:])  # Remove "data: " prefix
+                    generated_posts.append(post_data)
+                    content_generation_time += post_data['processing_time']
+                else:
+                    # Only yield status updates, not the actual posts
+                    yield event
+            
+            logger.info(f"✅ Step 4/5 - Content generation completed in {content_generation_time:.2f}s, generated {len(generated_posts)} posts")
+            for i, post in enumerate(generated_posts, 1):
+                logger.info(f"📝 Generated Post {i}: {post['post_content'][:150]}{'...' if len(post['post_content']) > 150 else ''}")
+            
+            # Step 5: Apply style matching and stream FINAL posts (75-100%)
+            yield self._format_sse_event("status", {
+                "message": "Applying style matching...",
+                "stage": "style_matching_start",
+                "progress": 75,
+                "timestamp": datetime.now().isoformat()
+            })
+            
+            async for event in self._stream_style_matching(
+                generated_posts=generated_posts,
+                context_posts=context_posts
             ):
                 yield event
             
@@ -179,6 +260,7 @@ class StreamingPipelineService:
         enhanced_topics: List[Dict[str, Any]],
         original_text: str,
         original_url: str,
+        audience_context: str,
         target_platforms: List[str]
     ) -> AsyncGenerator[str, None]:
         """
@@ -191,10 +273,11 @@ class StreamingPipelineService:
         
         for topic in enhanced_topics:
             for platform in target_platforms:
-                task = self._generate_single_post(
+                task = self._generate_content_only(
                     topic=topic,
                     original_text=original_text,
                     original_url=original_url,
+                    audience_context=audience_context,
                     platform=platform
                 )
                 tasks.append(task)
@@ -204,13 +287,12 @@ class StreamingPipelineService:
                     'platform': platform
                 }
                 task_metadata.append(metadata)
-                print(f"📝 Creating task for: {metadata}")  # Debug log
         
         # Process tasks as they complete
         posts_completed = 0
         total_posts = len(tasks)
         
-                 # Execute all tasks in parallel and wait for results
+        # Execute all tasks in parallel and wait for results
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
         # Process results with correct metadata mapping
@@ -233,18 +315,13 @@ class StreamingPipelineService:
                 continue
             
             if result['success']:
-                # Calculate progress (50-100% for content generation)
-                content_progress = 50 + (posts_completed / len(tasks)) * 50
+                # Calculate progress (45-75% for content generation only)
+                content_progress = 45 + (posts_completed / len(tasks)) * 30
                 
-                # Stream the completed post
-                post_data = {
-                    "post_content": result['final_post'],
-                    "topic_id": metadata['topic_id'],
-                    "topic_name": metadata['topic_name'],
-                    "platform": metadata['platform'],
-                    "primary_emotion": result.get('primary_emotion', ''),
-                    "content_strategy": result['content_strategy'],
-                    "processing_time": result['processing_time'],
+                # Stream progress status only - NOT the actual post content yet
+                status_data = {
+                    "message": f"Generated post {posts_completed}/{len(tasks)} for {metadata['platform']}",
+                    "stage": "content_generation_progress",
                     "progress": round(content_progress),
                     "post_progress": {
                         "completed": posts_completed,
@@ -252,11 +329,24 @@ class StreamingPipelineService:
                     },
                     "timestamp": datetime.now().isoformat()
                 }
-                print(f"🎉 Streaming post: {post_data['platform']} - {post_data['post_content'][:50]}...")  # Debug log
-                yield self._format_sse_event("post", post_data)
+                logger.info(f"🎉 Generated post: {metadata['platform']} - {result['post_content'][:50]}...")  # Debug log
+                yield self._format_sse_event("status", status_data)
+                
+                # Store the post data for collection (will be styled later) - DON'T yield yet
+                post_data = {
+                    "post_content": result['post_content'],
+                    "topic_id": metadata['topic_id'],
+                    "topic_name": metadata['topic_name'],
+                    "platform": metadata['platform'],
+                    "primary_emotion": result.get('primary_emotion', ''),
+                    "content_strategy": result['content_strategy'],
+                    "processing_time": result['processing_time']
+                }
+                # This will be collected by the main stream_posts method for style matching
+                yield self._format_sse_event("generated_post", post_data)
             else:
                 # Calculate progress even for errors
-                content_progress = 50 + (posts_completed / len(tasks)) * 50
+                content_progress = 45 + (posts_completed / len(tasks)) * 30
                 
                 # Stream error for this specific post
                 yield self._format_sse_event("post_error", {
@@ -272,11 +362,12 @@ class StreamingPipelineService:
                     "timestamp": datetime.now().isoformat()
                 })
     
-    async def _generate_single_post(
+    async def _generate_content_only(
         self,
         topic: Dict[str, Any],
         original_text: str,
         original_url: str,
+        audience_context: str,
         platform: str
     ) -> Dict[str, Any]:
         """
@@ -284,31 +375,122 @@ class StreamingPipelineService:
         Runs in thread pool to avoid blocking the event loop.
         """
         try:
-            # Run the synchronous agent method in thread pool
             loop = asyncio.get_event_loop()
             with ThreadPoolExecutor() as executor:
-                result = await loop.run_in_executor(
+                content_result = await loop.run_in_executor(
                     executor,
                     self.content_generator.generate_content_for_topic,
                     topic,
                     original_text,
                     original_url,
-                    platform
+                    platform,
+                    audience_context
                 )
             
-            # Add topic information to result
-            result['primary_emotion'] = topic.get('primary_emotion', '')
-            return result
+            if not content_result['success']:
+                content_result['primary_emotion'] = topic.get('primary_emotion', '')
+                return content_result
+            
+            return {
+                'success': True,
+                'post_content': content_result['final_post'],
+                'topic_id': topic['topic_id'],
+                'topic_name': topic['topic_name'],
+                'platform': platform,
+                'primary_emotion': topic.get('primary_emotion', ''),
+                'content_strategy': content_result['content_strategy'],
+                'processing_time': content_result['processing_time']
+            }
             
         except Exception as e:
             return {
                 'success': False,
-                'error': f"Failed to generate content: {str(e)}",
-                'final_post': "",
-                'content_strategy': "",
-                'processing_time': 0.0,
-                'primary_emotion': topic.get('primary_emotion', '')
+                'error': f"Content generation failed: {str(e)}",
+                'topic_id': topic['topic_id'],
+                'topic_name': topic['topic_name'],
+                'platform': platform,
+                'primary_emotion': topic.get('primary_emotion', ''),
+                'content_strategy': '',
+                'processing_time': 0.0
             }
+    
+    async def _stream_style_matching(
+        self,
+        generated_posts: List[Dict[str, Any]],
+        context_posts: Dict[str, List[str]]
+    ) -> AsyncGenerator[str, None]:
+        """
+        Apply style matching to generated posts and stream final results.
+        """
+        posts_completed = 0
+        total_posts = len(generated_posts)
+        
+        for i, post in enumerate(generated_posts):
+            posts_completed += 1
+            
+            # Extract platform and context posts
+            platform = post['platform']
+            platform_context_posts = context_posts.get(platform, [])
+            
+            # Extract content before URL for style matching
+            post_content = post['post_content']
+            post_parts = post_content.rsplit(' ', 1)  # Split on last space
+            if len(post_parts) == 2 and post_parts[1].startswith('http'):
+                content_only = post_parts[0]
+                url_part = post_parts[1]
+            else:
+                content_only = post_content
+                url_part = ""
+            
+            final_post = post_content  # Default to original if style matching fails
+            style_processing_time = 0.0
+            
+            # Apply style matching if context posts are available
+            if platform_context_posts:
+                logger.info(f"🔍 Applying style matching to post {i+1}: {post_content[:100]}{'...' if len(post_content) > 100 else ''}")
+                try:
+                    style_result = await self.style_matcher.match_style(
+                        original_content=content_only,
+                        context_posts=platform_context_posts,
+                        platform=platform,
+                        target_length=240  # Reserve space for URL
+                    )
+                    
+                    if style_result['success']:
+                        # Reconstruct final post with style-matched content + URL
+                        if url_part:
+                            final_post = f"{style_result['final_content']} {url_part}"
+                        else:
+                            final_post = style_result['final_content']
+                        style_processing_time = style_result['processing_time']
+                        logger.info(f"📝 Final Post {i+1}: {final_post[:150]}{'...' if len(final_post) > 150 else ''}")
+                    else:
+                        logger.warning(f"Style matching failed for post {i+1}: {style_result['error']}")
+                
+                except Exception as e:
+                    logger.warning(f"Style matching error for post {i+1}: {str(e)}")
+            
+            # Calculate progress (75-100% for style matching)
+            style_progress = 75 + (posts_completed / total_posts) * 25
+            
+            # Stream the final post
+            final_post_data = {
+                "post_content": final_post,
+                "topic_id": post['topic_id'],
+                "topic_name": post['topic_name'],
+                "platform": post['platform'],
+                "primary_emotion": post['primary_emotion'],
+                "content_strategy": post['content_strategy'],
+                "processing_time": post['processing_time'] + style_processing_time,
+                "progress": round(style_progress),
+                "post_progress": {
+                    "completed": posts_completed,
+                    "total": total_posts
+                },
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            yield self._format_sse_event("post", final_post_data)
     
     def _format_sse_event(self, event_type: str, data: Dict[str, Any]) -> str:
         """
@@ -322,6 +504,101 @@ class StreamingPipelineService:
             SSE-formatted string
         """
         return f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
+    
+    async def test_style_matching_only(
+        self,
+        mock_generated_posts: List[Dict[str, Any]] = None,
+        mock_context_posts: Dict[str, List[str]] = None
+    ) -> List[str]:
+        """
+        Test method to isolate and debug the _stream_style_matching function.
+        
+        Args:
+            mock_generated_posts: Test posts to style match (optional)
+            mock_context_posts: Test context posts (optional)
+            
+        Returns:
+            List of SSE events as strings
+        """
+        # Use default test data if not provided
+        if mock_generated_posts is None:
+            mock_generated_posts = [
+                {
+                    'post_content': 'This is a test post about AI technology. https://example.com',
+                    'topic_id': 'topic_1',
+                    'topic_name': 'AI Technology',
+                    'platform': 'twitter',
+                    'primary_emotion': 'excitement',
+                    'content_strategy': 'Educational with enthusiasm',
+                    'processing_time': 1.5
+                },
+                {
+                    'post_content': 'Another test post about machine learning innovations.',
+                    'topic_id': 'topic_2', 
+                    'topic_name': 'Machine Learning',
+                    'platform': 'linkedin',
+                    'primary_emotion': 'curiosity',
+                    'content_strategy': 'Professional insight',
+                    'processing_time': 2.0
+                }
+            ]
+        
+        if mock_context_posts is None:
+            mock_context_posts = {
+                'twitter': [
+                    'Just discovered this amazing new AI tool! 🚀 Game changer for productivity.',
+                    'Hot take: The future of work is human-AI collaboration, not replacement.',
+                    'Mind blown by today\'s tech demo. Innovation never stops! 💡'
+                ],
+                'linkedin': [
+                    'Reflecting on the transformative potential of artificial intelligence in enterprise solutions.',
+                    'Excited to share insights from our latest research on machine learning applications.',
+                    'The intersection of technology and human creativity continues to inspire new possibilities.'
+                ]
+            }
+        
+        print(f"🧪 Testing style matching with {len(mock_generated_posts)} posts")
+        print(f"🧪 Context posts available for platforms: {list(mock_context_posts.keys())}")
+        
+        # Collect all SSE events
+        events = []
+        
+        try:
+            async for event in self._stream_style_matching(
+                generated_posts=mock_generated_posts,
+                context_posts=mock_context_posts
+            ):
+                events.append(event)
+                print(f"📡 SSE Event: {event.strip()}")
+        
+        except Exception as e:
+            error_event = self._format_sse_event("error", {
+                "error": f"Style matching test failed: {str(e)}",
+                "stage": "style_matching_test"
+            })
+            events.append(error_event)
+            print(f"❌ Error during style matching test: {str(e)}")
+        
+        print(f"🧪 Test completed. Generated {len(events)} SSE events")
+        return events
+    
+    async def get_user_context_posts(self, user_id: str, platform: str = None) -> List[Dict[str, Any]]:
+        """Get user context posts from database by user_id"""
+        try:
+            return await self.context_db.get_user_context_posts(user_id, platform)
+        except Exception as e:
+            # Log error but don't fail the pipeline
+            logger.error(f"Error getting context posts for user {user_id}: {str(e)}")
+            return []
+    
+    async def get_context_posts_by_handle(self, x_handle: str, platform: str = None) -> List[Dict[str, Any]]:
+        """Get context posts from database by x_handle"""
+        try:
+            return await self.context_db.get_context_posts_by_handle(x_handle, platform)
+        except Exception as e:
+            # Log error but don't fail the pipeline
+            logger.error(f"Error getting context posts for handle {x_handle}: {str(e)}")
+            return []
 
 
 class StreamingPipelineError(Exception):

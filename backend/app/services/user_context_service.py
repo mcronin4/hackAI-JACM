@@ -33,11 +33,11 @@ class UserContextService:
             logger.info(f"Setting up Twitter context for user {user_id} with handle @{twitter_handle}")
             
             # Check if user already has context
-            if await self.db.user_has_context(user_id):
-                logger.info(f"User {user_id} already has context posts, skipping scraping")
+            if await self.db.x_handle_has_context(twitter_handle):
+                logger.info(f"Twitter handle {twitter_handle} already has context posts, skipping scraping")
                 return {
                     "success": True,
-                    "message": "User already has context posts",
+                    "message": "Twitter handle already has context posts",
                     "posts_scraped": 0,
                     "posts_saved": 0,
                     "skipped": True
@@ -70,6 +70,7 @@ class UserContextService:
             # Save to database
             save_success = await self.db.save_context_posts(
                 user_id=user_id,
+                x_handle=twitter_handle,
                 posts=selected_posts,
                 platform="x"
             )
