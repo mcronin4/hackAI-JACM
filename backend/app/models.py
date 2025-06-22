@@ -64,10 +64,12 @@ class ContentPipelineRequest(BaseModel):
     """Request for the unified content processing pipeline"""
     text: str = Field(..., description="The original text to process")
     original_url: str = Field(..., description="URL of the original content")
+    user_id: Optional[str] = Field(None, description="User ID for context posts (optional)")
     target_platforms: Optional[List[str]] = Field(
         default=["twitter"], 
         description="Target social media platforms"
     )
+    user_id: Optional[str] = Field(None, description="User ID")
 
 
 class ContentPipelineResponse(BaseModel):
@@ -123,6 +125,7 @@ class ContentGenerationOnlyRequest(BaseModel):
     original_text: str = Field(..., description="The original long-form text")
     topics: List[EnhancedTopic] = Field(..., description="List of enhanced topics with emotion data")
     original_url: str = Field(..., description="URL of the original content")
+    audience_context: str = Field(default="", description="Target audience context")
     target_platforms: Optional[List[str]] = Field(
         default=["twitter"], 
         description="Target social media platforms"
@@ -173,3 +176,49 @@ class PlatformStatusResponse(BaseModel):
 
 class AllPlatformsStatusResponse(BaseModel):
     platforms: dict 
+
+# Twitter Context Models
+class TwitterContextRequest(BaseModel):
+    """Request to set up Twitter context for a user"""
+    user_id: str = Field(..., description="UUID of the user")
+    twitter_handle: str = Field(..., description="Twitter handle (with or without @)")
+
+class TwitterContextResponse(BaseModel):
+    """Response from Twitter context setup"""
+    success: bool = Field(..., description="Whether the context setup was successful")
+    message: str = Field(..., description="Success or error message")
+    posts_scraped: int = Field(..., description="Number of posts scraped from Twitter")
+    posts_saved: int = Field(..., description="Number of posts saved to database")
+    twitter_handle: Optional[str] = Field(None, description="Cleaned Twitter handle")
+    skipped: bool = Field(default=False, description="Whether scraping was skipped (user already has context)")
+    error: Optional[str] = Field(None, description="Error message if setup failed")
+
+# Audience Extraction Models
+class AudienceExtractionOnlyRequest(BaseModel):
+    """Request for audience extraction only"""
+    text: str = Field(..., description="The text content to analyze for audience")
+
+class AudienceExtractionOnlyResponse(BaseModel):
+    """Response from audience extraction only"""
+    success: bool = Field(..., description="Whether the audience extraction was successful")
+    audience_summary: str = Field(..., description="Extracted audience summary")
+    processing_time: float = Field(..., description="Time taken to process the request in seconds")
+    error: Optional[str] = Field(None, description="Error message if extraction failed")
+
+# Style Matching Models
+class StyleMatchingOnlyRequest(BaseModel):
+    """Request for style matching only"""
+    original_content: str = Field(..., description="The generated content to style-match")
+    context_posts: List[str] = Field(..., description="List of user's previous posts for style reference")
+    platform: str = Field(default="twitter", description="Target platform")
+    target_length: int = Field(default=240, description="Maximum character length for content")
+
+class StyleMatchingOnlyResponse(BaseModel):
+    """Response from style matching only"""
+    success: bool = Field(..., description="Whether the style matching was successful")
+    final_content: str = Field(..., description="Style-matched content")
+    style_analysis: str = Field(..., description="Analysis of the detected writing style")
+    similar_posts_count: int = Field(..., description="Number of similar posts found")
+    skipped: bool = Field(default=False, description="Whether style matching was skipped (no context posts)")
+    processing_time: float = Field(..., description="Time taken to process the request in seconds")
+    error: Optional[str] = Field(None, description="Error message if style matching failed")

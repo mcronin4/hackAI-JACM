@@ -9,6 +9,7 @@ from datetime import datetime
 
 class EmotionTargetingState(TypedDict):
     topics: List[Dict[str, Any]]
+    audience_context: str
     emotion_analysis: List[Dict[str, Any]]
     processing_time: float
     error: str
@@ -65,6 +66,10 @@ Your task is to analyze the given topic and determine which of these 5 emotional
 {state['original_text'] if 'original_text' in state else 'Not provided'}
 </originalContent>
 
+<targetAudience>
+{state.get('audience_context', 'No audience context provided')}
+</targetAudience>
+
 <coreIdea>
 {topic['topic_name']}
 </coreIdea>
@@ -75,7 +80,9 @@ Your task is to analyze the given topic and determine which of these 5 emotional
 </context>
 
 <prompt>
-Using the core idea, reference text, and also the context itself. Which of the following does this idea evoke and why?
+Using the core idea, reference text, target audience, and the context itself. Which of the following does this idea evoke and why?
+
+Consider the target audience when selecting the emotion - different audiences will respond to different emotional appeals.
 
 Encourage Their Dreams - Content that inspires aspiration, growth, positive future outcomes, and achievement
 Justify Their Failures - Content that validates struggles, provides external explanations, removes self-blame
@@ -230,12 +237,13 @@ Unite Against Common Challenges - Content that identifies shared obstacles, mutu
         
         return state
     
-    def analyze_emotions(self, topics: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def analyze_emotions(self, topics: List[Dict[str, Any]], audience_context: str = "") -> Dict[str, Any]:
         """Main method to analyze emotion targeting for topics"""
         start_time = datetime.now()
         
         initial_state = EmotionTargetingState(
             topics=topics,
+            audience_context=audience_context,
             emotion_analysis=[],
             processing_time=0.0,
             error=""

@@ -12,6 +12,7 @@ class ContentGenerationState(TypedDict):
     topics: List[Dict[str, Any]]
     target_platforms: List[str]
     original_url: str
+    audience_context: str
     current_topic: Dict[str, Any]
     content_strategy: str
     generated_content: str
@@ -19,7 +20,6 @@ class ContentGenerationState(TypedDict):
     final_post: str
     processing_time: float
     error: str
-
 
 class ContentGeneratorAgent:
     def __init__(self, model_name: str = "gemini-2.5-flash", temperature: float = 0.3):
@@ -118,6 +118,10 @@ class ContentGeneratorAgent:
 {state['original_text']}
 </originalContent>
 
+<targetAudience>
+{state.get('audience_context', 'No audience context provided')}
+</targetAudience>
+
 <coreIdea>
 {current_topic['topic_name']}
 </coreIdea>
@@ -150,15 +154,13 @@ here is how I would think about creating the post.
 3. Then you think about an example that is actionable. The core ideas of being straight with yourself is often
    related to varying desires. If we think about the desires that people have, you can think of 1) money, 2) dreams
    of success, 3) love, 4) companionship. If we though about it generally, it would be money that is a good example.
-4. Finally you'll get to this below:
+4.    Finally you'll get to this below:
 
    If you don't lie to yourself, you'll go down the right path.
 
    People justify why they feel terrible, why they're trapped by money, why they can't get what they want.
 
    All of those are problems that can be solved with skill and knowledge. Honesty allows you to start solving them.
-   
-Make sure to write in the same style as the originalContent.
 
 ABSOLUTE REQUIREMENTS:
 - MUST be between {min_content_length}-{max_content_length} characters EXACTLY
@@ -228,7 +230,8 @@ ABSOLUTE REQUIREMENTS:
         topic: Dict[str, Any], 
         original_text: str, 
         original_url: str, 
-        platform: str = "twitter"
+        platform: str = "twitter",
+        audience_context: str = ""
     ) -> Dict[str, Any]:
         """Main method to generate content for a single topic"""
         start_time = datetime.now()
@@ -248,6 +251,7 @@ ABSOLUTE REQUIREMENTS:
             original_text=original_text,
             topics=[topic],
             target_platforms=[platform],
+            audience_context=audience_context,
             original_url=original_url,
             current_topic={},
             content_strategy="",
