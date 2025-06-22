@@ -1,4 +1,5 @@
-# 🦎 Chameleon - AI-Powered Content Adaptation Platform
+# 🦎 Chameleon - AI-Powered Content Adaptation Platform 
+### Built in only 24 hours
 
 > **🏆 Winner: Best AI Retrieval Project**  
 > *Awarded 4 x $100 BestBuy gift cards for demonstrating the best implementation of contextual AI retrieval*
