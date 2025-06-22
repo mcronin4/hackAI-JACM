@@ -2,7 +2,7 @@ from typing import Dict, List, Any
 from typing_extensions import TypedDict
 from langgraph.graph import StateGraph, END
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.schema import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from datetime import datetime
 from app.config.platform_configs import PlatformConfigManager
 
@@ -112,7 +112,53 @@ class ContentGeneratorAgent:
             min_content_length = 210
             max_content_length = 240
             
-            system_prompt = f"""You are a social media content creator. Write a Twitter post with integrated call-to-action.
+            system_prompt = f"""<context>
+
+<originalContent>
+{state['original_text']}
+</originalContent>
+
+<coreIdea>
+{current_topic['topic_name']}
+</coreIdea>
+
+<referenceText>
+{current_topic.get('content_excerpt', '')}
+</referenceText>
+
+<emotionalAlignment>
+{current_topic.get('primary_emotion', 'encourage_dreams')}
+</emotionalAlignment>
+
+<reasonForEmotion>
+{current_topic.get('reasoning', 'Emotional targeting for engagement')}
+</reasonForEmotion>
+
+</context>
+
+<prompt>
+You are to create a post based on the context.
+
+here is how I would think about creating the post.
+
+1. start with the topic or idea. Say the topic is "Be straight with yourself and you'll realize the stuff holding
+   you back is just skills you still need to learn—and that honest moment is what gets you moving."
+2. then connect it to the emotion. Say the emotion is "Encourage Their Dreams". The way to connect this together is
+   to start thinking about how to say the topic in the way that encourages their dreams. Being straight with
+   yourself means that you don't lie. It means that you follow a path that is for you not for someone else. The
+   piece that resonates is being true to yourself. so that is the hook.
+3. Then you think about an example that is actionable. The core ideas of being straight with yourself is often
+   related to varying desires. If we think about the desires that people have, you can think of 1) money, 2) dreams
+   of success, 3) love, 4) companionship. If we though about it generally, it would be money that is a good example.
+4. Finally you'll get to this below:
+
+   If you don't lie to yourself, you'll go down the right path.
+
+   People justify why they feel terrible, why they're trapped by money, why they can't get what they want.
+
+   All of those are problems that can be solved with skill and knowledge. Honesty allows you to start solving them.
+   
+Make sure to write in the same style as the originalContent.
 
 ABSOLUTE REQUIREMENTS:
 - MUST be between {min_content_length}-{max_content_length} characters EXACTLY
@@ -120,19 +166,13 @@ ABSOLUTE REQUIREMENTS:
 - Count every character including spaces and punctuation
 - Do NOT include URLs (they are added separately)
 
-CONTENT REQUIREMENTS:
-- Topic: {current_topic['topic_name']}
-- Emotion: {current_topic['primary_emotion']}
-- Include natural call-to-action in the text
-- Make it engaging and valuable
+</prompt>
 
-CHARACTER COUNT VERIFICATION:
-Before responding, count your characters. Your response must be {min_content_length}-{max_content_length} characters.
+<structure>
+[place the content here]
+</structure>"""
 
-RESPONSE FORMAT:
-Return ONLY the post text. No explanations, no formatting, no URLs."""
-
-            user_prompt = f"Create a complete {platform} post for this topic: {current_topic['topic_name']}"
+            user_prompt = f"Create a complete {platform} post following the structure provided."
             
             messages = [
                 SystemMessage(content=system_prompt),

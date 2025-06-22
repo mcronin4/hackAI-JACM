@@ -56,34 +56,44 @@ class EmotionTargetingAgent:
             
             for topic in state['topics']:
                 # Create prompt for this specific topic
-                system_prompt = """You are an expert marketing psychologist specializing in emotional targeting for content marketing.
+                system_prompt = f"""<role>
+Your task is to analyze the given topic and determine which of these 5 emotional themes it should target for marketing purposes
+</role>
 
-Your task is to analyze the given topic and determine which of these 5 emotional themes it should target for marketing purposes:
+<context>
+<originalContent>
+{state['original_text'] if 'original_text' in state else 'Not provided'}
+</originalContent>
 
-1. **Encourage Their Dreams** - Content that inspires aspiration, growth, positive future outcomes, and achievement
-2. **Justify Their Failures** - Content that validates struggles, provides external explanations, removes self-blame  
-3. **Allay Their Fears** - Content that provides reassurance, reduces anxiety, offers safety and security
-4. **Confirm Their Suspicions** - Content that validates existing doubts, provides "I knew it!" moments
-5. **Throw Rocks at Their Enemies** - Content that identifies common adversaries, shared frustrations, creates us-vs-them dynamics
+<coreIdea>
+{topic['topic_name']}
+</coreIdea>
 
-For the given topic, you must:
-1. Select the ONE emotion theme that best fits this topic for marketing
-2. Provide a confidence score (0.0 to 1.0) for how well this topic fits the chosen emotion
-3. Explain your reasoning for why this emotion theme is the best match
+<referenceText>
+{topic['content_excerpt']}
+</referenceText>
+</context>
 
-Return your response as a JSON object with this structure:
-{
-    "primary_emotion": "encourage_dreams|justify_failures|allay_fears|confirm_suspicions|throw_rocks_enemies",
-    "emotion_confidence": 0.85,
-    "reasoning": "Detailed explanation of why this emotion theme is the best match for this topic"
-}"""
+<prompt>
+Using the core idea, reference text, and also the context itself. Which of the following does this idea evoke and why?
 
-                user_prompt = f"""Topic to analyze:
-- Topic Name: {topic['topic_name']}
-- Content Excerpt: {topic['content_excerpt']}
-- Topic ID: {topic['topic_id']}
+Encourage Their Dreams - Content that inspires aspiration, growth, positive future outcomes, and achievement
+Justify Their Failures - Content that validates struggles, provides external explanations, removes self-blame
+Allay Their Fears - Content that provides reassurance, reduces anxiety, offers safety and security
+Confirm Their Suspicions - Content that validates existing doubts, provides "I knew it!" moments
+Unite Against Common Challenges - Content that identifies shared obstacles, mutual frustrations, collective concerns
+</prompt>
 
-Analyze this topic and determine the best emotion theme for marketing this content."""
+<structure>
+{{
+"primary_emotion": "encourage_dreams|justify_failures|allay_fears|confirm_suspicions|unite_against_challenges",
+"emotion_description" : "A short description of the emotion theme",
+"emotion_confidence": 0.85,
+"reasoning": "The why. Detailed explanation of why this emotion theme is the best match for this topic"
+}}
+</structure>"""
+
+                user_prompt = f"Analyze Topic ID {topic['topic_id']} and return the JSON response following the structure provided."
                 
                 try:
                     # Use a more direct approach to avoid message formatting issues
@@ -107,6 +117,7 @@ Analyze this topic and determine the best emotion theme for marketing this conte
                         'topic_name': topic['topic_name'],
                         'content_excerpt': topic['content_excerpt'],
                         'primary_emotion': emotion_data['primary_emotion'],
+                        'emotion_description': emotion_data.get('emotion_description', ''),
                         'emotion_confidence': float(emotion_data['emotion_confidence']),
                         'reasoning': emotion_data['reasoning']
                     }
@@ -123,6 +134,7 @@ Analyze this topic and determine the best emotion theme for marketing this conte
                             'topic_name': topic['topic_name'],
                             'content_excerpt': topic['content_excerpt'],
                             'primary_emotion': emotion_data.get('primary_emotion', 'encourage_dreams'),
+                            'emotion_description': emotion_data.get('emotion_description', 'Default emotion description'),
                             'emotion_confidence': float(emotion_data.get('emotion_confidence', 0.5)),
                             'reasoning': emotion_data.get('reasoning', 'Analysis failed to parse properly')
                         }
@@ -134,6 +146,7 @@ Analyze this topic and determine the best emotion theme for marketing this conte
                             'topic_name': topic['topic_name'],
                             'content_excerpt': topic['content_excerpt'],
                             'primary_emotion': 'encourage_dreams',
+                            'emotion_description': 'Inspire aspiration and positive outcomes',
                             'emotion_confidence': 0.3,
                             'reasoning': 'Failed to analyze emotion - defaulted to encourage_dreams'
                         }
@@ -171,9 +184,30 @@ Analyze this topic and determine the best emotion theme for marketing this conte
                 analysis['topic_name'] = str(analysis['topic_name']).strip()
                 analysis['reasoning'] = str(analysis['reasoning']).strip()
                 
-                # Skip if essential data is missing
-                if not analysis['topic_name'] or not analysis['reasoning']:
+                # Handle emotion_description field
+                if 'emotion_description' not in analysis or not analysis['emotion_description']:
+                    # Provide default emotion description based on the emotion theme
+                    emotion_descriptions = {
+                        'encourage_dreams': 'Inspire aspiration and positive outcomes',
+                        'justify_failures': 'Validate struggles and remove self-blame',
+                        'allay_fears': 'Provide reassurance and security',
+                        'confirm_suspicions': 'Validate existing doubts and concerns',
+                        'unite_against_challenges': 'Unite against common challenges'
+                    }
+                    analysis['emotion_description'] = emotion_descriptions.get(
+                        analysis['primary_emotion'], 
+                        'Emotional targeting for engagement'
+                    )
+                else:
+                    analysis['emotion_description'] = str(analysis['emotion_description']).strip()
+                
+                # Skip only if topic_name is completely missing
+                if not analysis['topic_name']:
                     continue
+                
+                # Provide default reasoning if missing
+                if not analysis['reasoning']:
+                    analysis['reasoning'] = f"Emotion analysis for {analysis['topic_name']}"
                 
                 validated_analysis.append(analysis)
             

@@ -2,7 +2,7 @@ from typing import Dict, List, Any
 from typing_extensions import TypedDict
 from langgraph.graph import StateGraph, END
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.schema import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 import json
 import re
 from datetime import datetime
@@ -10,7 +10,6 @@ from datetime import datetime
 
 class TopicExtractionState(TypedDict):
     text: str
-    max_topics: int
     topics: List[Dict[str, Any]]
     processing_time: float
     error: str
@@ -49,7 +48,7 @@ class TopicExtractorAgent:
    - A confidence score (0.0 to 1.0) for how well this topic is represented
 
 Guidelines:
-- Extract between 1 and {max_topics} topics
+- Extract 2-5 meaningful topics from the text
 - Each topic should be distinct and meaningful
 - Excerpts should be 1-3 sentences that best represent the topic
 - Topics should cover the main themes and subjects in the text
@@ -67,7 +66,7 @@ Return your response as a JSON array with the following structure:
             user_prompt = f"Please extract topics from the following text:\n\n{state['text']}"
             
             messages = [
-                SystemMessage(content=system_prompt.format(max_topics=state['max_topics'])),
+                SystemMessage(content=system_prompt),
                 HumanMessage(content=user_prompt)
             ]
             
@@ -132,8 +131,8 @@ Return your response as a JSON array with the following structure:
                 
                 validated_topics.append(validated_topic)
             
-            # Limit to max_topics
-            state['topics'] = validated_topics[:state['max_topics']]
+            # Keep all validated topics (no artificial limit)
+            state['topics'] = validated_topics
             
         except Exception as e:
             state['error'] = f"Error in topic validation: {str(e)}"
@@ -152,13 +151,12 @@ Return your response as a JSON array with the following structure:
         
         return state
     
-    def extract_topics(self, text: str, max_topics: int = 10) -> Dict[str, Any]:
+    def extract_topics(self, text: str) -> Dict[str, Any]:
         """Main method to extract topics from text"""
         start_time = datetime.now()
         
         initial_state = TopicExtractionState(
             text=text,
-            max_topics=max_topics,
             topics=[],
             processing_time=0.0,
             error=""

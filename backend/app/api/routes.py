@@ -1,13 +1,19 @@
 from fastapi import APIRouter, HTTPException, Depends
 from app.models import (
-    TopicExtractionRequest, 
-    TopicExtractionResponse, 
-    ContentGenerationRequest,
-    ContentGenerationResponse,
-    ErrorResponse
+    ContentPipelineRequest,
+    ContentPipelineResponse,
+    ErrorResponse,
+    TopicExtractionOnlyRequest,
+    TopicExtractionOnlyResponse,
+    EmotionTargetingOnlyRequest,
+    EmotionTargetingOnlyResponse,
+    ContentGenerationOnlyRequest,
+    ContentGenerationOnlyResponse
 )
+from app.services.content_pipeline import ContentPipelineService, ContentPipelineError
 from app.services.topic_service import TopicExtractionService, TopicExtractionError
-from app.services.content_service import ContentGenerationService, ContentGenerationError
+from app.services.emotion_service import EmotionTargetingService, EmotionTargetingError
+from app.services.content_generation_service import ContentGenerationOnlyService, ContentGenerationOnlyError
 from typing import Dict, Any
 import logging
 
@@ -15,7 +21,12 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1", tags=["topic-extraction", "content-generation"])
+router = APIRouter(prefix="/api/v1", tags=["content-pipeline"])
+
+
+def get_pipeline_service() -> ContentPipelineService:
+    """Dependency injection for content pipeline service"""
+    return ContentPipelineService()
 
 
 def get_topic_service() -> TopicExtractionService:
@@ -23,44 +34,49 @@ def get_topic_service() -> TopicExtractionService:
     return TopicExtractionService()
 
 
-def get_content_service() -> ContentGenerationService:
-    """Dependency injection for content generation service"""
-    return ContentGenerationService()
+def get_emotion_service() -> EmotionTargetingService:
+    """Dependency injection for emotion targeting service"""
+    return EmotionTargetingService()
 
+
+def get_content_service() -> ContentGenerationOnlyService:
+    """Dependency injection for content generation service"""
+    return ContentGenerationOnlyService()
+
+
+# INDIVIDUAL AGENT ENDPOINTS
 
 @router.post(
     "/extract-topics",
-    response_model=TopicExtractionResponse,
+    response_model=TopicExtractionOnlyResponse,
     responses={
         400: {"model": ErrorResponse},
         500: {"model": ErrorResponse}
     },
     summary="Extract topics from text",
-    description="Use LangGraph agent to extract topics from input text"
+    description="Extract topics from input text using the topic extraction agent only"
 )
-async def extract_topics(
-    request: TopicExtractionRequest,
+async def extract_topics_only(
+    request: TopicExtractionOnlyRequest,
     topic_service: TopicExtractionService = Depends(get_topic_service)
-) -> TopicExtractionResponse:
+) -> TopicExtractionOnlyResponse:
     """
-    Extract topics from the provided text using LangGraph agent.
-    
-    The agent will:
-    - Analyze the text for distinct topics
-    - Extract relevant excerpts for each topic
-    - Provide confidence scores
-    - Return structured JSON response
+    Extract topics from text using only the topic extraction agent.
+    This endpoint allows you to test the topic extraction functionality independently.
     """
     try:
-        logger.info(f"Processing topic extraction request with max_topics={request.max_topics}")
+        logger.info(f"Processing topic extraction request for {len(request.text)} characters of text")
         
-        response = await topic_service.extract_topics(
-            text=request.text,
-            max_topics=request.max_topics
+        result = await topic_service.extract_topics(
+            text=request.text
         )
         
-        logger.info(f"Successfully extracted {response.total_topics} topics")
-        return response
+        if result.success:
+            logger.info(f"Successfully extracted {result.total_topics} topics")
+        else:
+            logger.warning(f"Topic extraction failed: {result.error}")
+        
+        return result
         
     except TopicExtractionError as e:
         logger.error(f"Topic extraction error: {str(e)}")
@@ -82,109 +98,92 @@ async def extract_topics(
         )
 
 
-@router.get(
-    "/health",
-    summary="Health check",
-    description="Check if the topic extraction service is healthy"
-)
-async def health_check(
-    topic_service: TopicExtractionService = Depends(get_topic_service)
-) -> Dict[str, Any]:
-    """Health check endpoint to verify service status"""
-    try:
-        agent_status = topic_service.get_agent_status()
-        return {
-            "status": "healthy",
-            "service": "topic-extraction-api",
-            "agent": agent_status,
-            "timestamp": "2024-01-01T00:00:00Z"  # You might want to use actual timestamp
-        }
-    except Exception as e:
-        logger.error(f"Health check failed: {str(e)}")
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "error": "Service unhealthy",
-                "detail": str(e)
-            }
-        )
-
-
-@router.get(
-    "/topics/example",
-    summary="Get example response",
-    description="Get an example of the topic extraction response format"
-)
-async def get_example_response() -> TopicExtractionResponse:
-    """Return an example response to show the expected format"""
-    from app.models import Topic
-    
-    example_topics = [
-        Topic(
-            topic_id=1,
-            topic_name="Artificial Intelligence",
-            content_excerpt="The field of artificial intelligence has seen remarkable advances in recent years, particularly in machine learning and neural networks.",
-            confidence_score=0.95
-        ),
-        Topic(
-            topic_id=2,
-            topic_name="Natural Language Processing",
-            content_excerpt="Natural language processing techniques enable computers to understand and generate human language effectively.",
-            confidence_score=0.88
-        ),
-        Topic(
-            topic_id=3,
-            topic_name="Deep Learning",
-            content_excerpt="Deep learning models have revolutionized how we approach complex pattern recognition tasks.",
-            confidence_score=0.92
-        )
-    ]
-    
-    return TopicExtractionResponse(
-        topics=example_topics,
-        total_topics=3,
-        processing_time=1.23
-    )
-
-
 @router.post(
-    "/generate-content",
-    response_model=ContentGenerationResponse,
+    "/analyze-emotions",
+    response_model=EmotionTargetingOnlyResponse,
     responses={
         400: {"model": ErrorResponse},
         500: {"model": ErrorResponse}
     },
-    summary="Generate social media content from topics",
-    description="Use LangGraph agent to generate platform-specific content from enhanced topics with emotion data"
+    summary="Analyze emotions for topics",
+    description="Analyze emotional themes for a list of topics using the emotion targeting agent only"
 )
-async def generate_content(
-    request: ContentGenerationRequest,
-    content_service: ContentGenerationService = Depends(get_content_service)
-) -> ContentGenerationResponse:
+async def analyze_emotions_only(
+    request: EmotionTargetingOnlyRequest,
+    emotion_service: EmotionTargetingService = Depends(get_emotion_service)
+) -> EmotionTargetingOnlyResponse:
     """
-    Generate social media content from enhanced topics with emotion data.
-    
-    The agent will:
-    - Process each topic independently
-    - Generate platform-specific content (starting with Twitter/X)
-    - Create engaging content based on emotional context
-    - Add relevant hashtags and call-to-action
-    - Include links back to original content
+    Analyze emotions for a list of topics using only the emotion targeting agent.
+    This endpoint allows you to test the emotion analysis functionality independently.
+    """
+    try:
+        logger.info(f"Processing emotion analysis request for {len(request.topics)} topics")
+        
+        result = await emotion_service.analyze_emotions(topics=request.topics)
+        
+        if result.success:
+            logger.info(f"Successfully analyzed emotions for {result.total_topics} topics")
+        else:
+            logger.warning(f"Emotion analysis failed: {result.error}")
+        
+        return result
+        
+    except EmotionTargetingError as e:
+        logger.error(f"Emotion targeting error: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "Emotion analysis failed",
+                "detail": str(e)
+            }
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in emotion analysis: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Internal server error",
+                "detail": "An unexpected error occurred during emotion analysis"
+            }
+        )
+
+
+@router.post(
+    "/generate-content",
+    response_model=ContentGenerationOnlyResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse}
+    },
+    summary="Generate social media content",
+    description="Generate social media content for enhanced topics using the content generation agent only"
+)
+async def generate_content_only(
+    request: ContentGenerationOnlyRequest,
+    content_service: ContentGenerationOnlyService = Depends(get_content_service)
+) -> ContentGenerationOnlyResponse:
+    """
+    Generate social media content for enhanced topics using only the content generation agent.
+    This endpoint allows you to test the content generation functionality independently.
     """
     try:
         logger.info(f"Processing content generation request for {len(request.topics)} topics and {len(request.target_platforms)} platforms")
         
-        response = await content_service.generate_content(
+        result = await content_service.generate_content(
             original_text=request.original_text,
             topics=request.topics,
             original_url=request.original_url,
             target_platforms=request.target_platforms
         )
         
-        logger.info(f"Successfully generated {response.successful_generations}/{response.total_generated} content pieces")
-        return response
+        if result.success:
+            logger.info(f"Successfully generated {result.successful_generations} content pieces out of {result.total_generated}")
+        else:
+            logger.warning(f"Content generation failed: {result.error}")
         
-    except ContentGenerationError as e:
+        return result
+        
+    except ContentGenerationOnlyError as e:
         logger.error(f"Content generation error: {str(e)}")
         raise HTTPException(
             status_code=400,
@@ -204,75 +203,167 @@ async def generate_content(
         )
 
 
-@router.get(
-    "/platforms",
-    summary="Get supported platforms",
-    description="Get list of supported social media platforms and their configurations"
+# UNIFIED PIPELINE ENDPOINT (existing)
+
+@router.post(
+    "/generate-posts",
+    response_model=ContentPipelineResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse}
+    },
+    summary="Generate social media posts from text",
+    description="Process text through the complete pipeline: extract topics → analyze emotions → generate content"
 )
-async def get_supported_platforms(
-    content_service: ContentGenerationService = Depends(get_content_service)
-) -> Dict[str, Any]:
-    """Get supported platforms and their configurations"""
+async def generate_posts(
+    request: ContentPipelineRequest,
+    pipeline_service: ContentPipelineService = Depends(get_pipeline_service)
+) -> ContentPipelineResponse:
+    """
+    Generate social media posts from text using the unified pipeline.
+    
+    The pipeline will:
+    1. Extract topics from the input text
+    2. Analyze emotional themes for each topic
+    3. Generate platform-specific content for each topic
+    4. Return a list of ready-to-post content
+    """
     try:
-        status = content_service.get_agent_status()
-        platforms = {}
+        logger.info(f"Processing pipeline request for {len(request.text)} characters of text")
         
-        for platform in status['supported_platforms']:
-            try:
-                config = content_service.get_platform_config(platform)
-                platforms[platform] = config
-            except Exception as e:
-                logger.warning(f"Could not get config for platform {platform}: {str(e)}")
+        result = await pipeline_service.process_content(
+            text=request.text,
+            original_url=request.original_url,
+            target_platforms=request.target_platforms
+        )
         
-        return {
-            "platforms": status['supported_platforms'],
-            "supported_platforms": status['supported_platforms'],
-            "platform_configs": platforms,
-            "agent_status": status
-        }
+        if result['success']:
+            logger.info(f"Successfully generated {len(result['generated_posts'])} posts from {result['total_topics']} topics")
+            
+            return ContentPipelineResponse(
+                success=True,
+                generated_posts=result['generated_posts'],
+                total_topics=result['total_topics'],
+                successful_generations=result['successful_generations'],
+                processing_time=result['processing_time'],
+                pipeline_details=result.get('pipeline_details')
+            )
+        else:
+            logger.warning(f"Pipeline processing failed: {result['error']}")
+            
+            return ContentPipelineResponse(
+                success=False,
+                generated_posts=[],
+                total_topics=result['total_topics'],
+                successful_generations=result['successful_generations'],
+                processing_time=result['processing_time'],
+                error=result['error']
+            )
         
+    except ContentPipelineError as e:
+        logger.error(f"Content pipeline error: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "Content pipeline processing failed",
+                "detail": str(e)
+            }
+        )
     except Exception as e:
-        logger.error(f"Error getting platform information: {str(e)}")
+        logger.error(f"Unexpected error in pipeline processing: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail={
-                "error": "Failed to get platform information",
+                "error": "Internal server error",
+                "detail": "An unexpected error occurred during pipeline processing"
+            }
+        )
+
+
+# UTILITY ENDPOINTS
+
+@router.get(
+    "/health",
+    summary="Health check",
+    description="Check if all services are healthy"
+)
+async def health_check(
+    pipeline_service: ContentPipelineService = Depends(get_pipeline_service),
+    topic_service: TopicExtractionService = Depends(get_topic_service),
+    emotion_service: EmotionTargetingService = Depends(get_emotion_service),
+    content_service: ContentGenerationOnlyService = Depends(get_content_service)
+) -> Dict[str, Any]:
+    """Health check endpoint to verify all service statuses"""
+    try:
+        return {
+            "status": "healthy",
+            "service": "content-pipeline-api",
+            "agents": {
+                "topic_extractor": topic_service.get_agent_status(),
+                "emotion_targeting": emotion_service.get_agent_status(),
+                "content_generator": content_service.get_agent_status(),
+                "pipeline": pipeline_service.get_pipeline_status()
+            },
+            "timestamp": "2024-01-01T00:00:00Z"  # You might want to use actual timestamp
+        }
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "Service unhealthy",
                 "detail": str(e)
             }
         )
 
 
 @router.get(
-    "/content/example",
-    summary="Get example content generation request",
-    description="Get an example of the content generation request format"
+    "/pipeline/example",
+    summary="Get example request",
+    description="Get an example of the pipeline request format"
 )
-async def get_example_content_request() -> ContentGenerationRequest:
+async def get_example_request() -> ContentPipelineRequest:
     """Return an example request to show the expected format"""
-    from app.models import EnhancedTopic
-    
-    example_topics = [
-        EnhancedTopic(
-            topic_id=1,
-            topic_name="Remote Work Productivity Challenges",
-            content_excerpt="Many professionals struggle with distractions when working from home, leading to decreased productivity and increased stress levels.",
-            primary_emotion="Justify Their Failures",
-            emotion_confidence=0.85,
-            reasoning="This topic validates the common struggle with remote work productivity, allowing the audience to feel understood rather than blamed for their challenges."
-        ),
-        EnhancedTopic(
-            topic_id=2,
-            topic_name="AI Tools for Productivity",
-            content_excerpt="Artificial intelligence tools are revolutionizing how we approach daily tasks and workflow optimization.",
-            primary_emotion="Anticipation",
-            emotion_confidence=0.92,
-            reasoning="This topic creates excitement about future possibilities and technological advancement in workplace efficiency."
-        )
-    ]
-    
-    return ContentGenerationRequest(
-        original_text="Long-form article about remote work challenges and AI solutions for modern professionals...",
-        topics=example_topics,
-        original_url="https://example.com/remote-work-ai-productivity",
+    return ContentPipelineRequest(
+        text="Artificial intelligence is revolutionizing how we work and live. "
+             "Machine learning algorithms are becoming more sophisticated, "
+             "enabling new applications across industries. From healthcare to finance, "
+             "AI is creating opportunities for innovation and efficiency. "
+             "However, it also raises important questions about the future of work "
+             "and the need for new skills in the digital economy.",
+        original_url="https://example.com/ai-future-article",
         target_platforms=["twitter"]
-    ) 
+    )
+
+
+@router.get(
+    "/pipeline/platforms",
+    summary="Get supported platforms",
+    description="Get list of supported social media platforms"
+)
+async def get_supported_platforms(
+    pipeline_service: ContentPipelineService = Depends(get_pipeline_service)
+) -> Dict[str, Any]:
+    """Get list of supported social media platforms and their configurations"""
+    try:
+        status = pipeline_service.get_pipeline_status()
+        return {
+            "supported_platforms": status['agents']['content_generator']['supported_platforms'],
+            "default_platform": "twitter",
+            "platform_details": {
+                "twitter": {
+                    "max_length": 280,
+                    "url_length": 23,
+                    "supports_threads": False
+                }
+            }
+        }
+    except Exception as e:
+        logger.error(f"Failed to get platform information: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Failed to retrieve platform information",
+                "detail": str(e)
+            }
+        ) 
