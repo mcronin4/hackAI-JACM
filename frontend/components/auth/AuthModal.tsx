@@ -14,7 +14,7 @@ interface AuthModalProps {
 export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
   const [isLogin, setIsLogin] = useState(true)
   const [isSyncingTwitter, setIsSyncingTwitter] = useState(false)
-  const { checkAuthStatus, user } = useAuthStore()
+  const { checkAuthStatus } = useAuthStore()
 
   const handleLoginSuccess = async () => {
     await checkAuthStatus()
@@ -94,7 +94,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                       Syncing your X profile
                     </h3>
                     <p className="text-sm text-gray-600">
-                      We're setting up your content generation context...
+                      We&apos;re setting up your content generation context...
                     </p>
                   </div>
                 </div>

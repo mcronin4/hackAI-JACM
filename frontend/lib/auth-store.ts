@@ -14,7 +14,7 @@ interface AuthState {
   resetAuthState: () => void
 }
 
-export const useAuthStore = create<AuthState>((set: any, get: any) => ({
+export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isLoggedIn: false,
   isLoading: false,
@@ -24,7 +24,7 @@ export const useAuthStore = create<AuthState>((set: any, get: any) => ({
     
     try {
       // Check if X handle already exists
-      const { data: existingUser, error: checkError } = await supabase
+      const { data: existingUser } = await supabase
         .from('user_info')
         .select('x_handle')
         .eq('x_handle', xHandle)
@@ -36,7 +36,7 @@ export const useAuthStore = create<AuthState>((set: any, get: any) => ({
       }
 
       // Check if email already exists
-      const { data: existingEmail, error: emailCheckError } = await supabase
+      const { data: existingEmail } = await supabase
         .from('user_info')
         .select('email')
         .eq('email', email)
