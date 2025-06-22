@@ -9,8 +9,8 @@ import AuthModal from '@/components/auth/AuthModal';
 
 // X.com Logo Component
 const XLogo = ({ className }: { className?: string }) => (
-  <svg viewBox="0 0 24 24" className={className} fill="currentColor">
-    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+  <svg viewBox="0 0 20 20" className={className} fill="currentColor">
+    <path d="M15.5 2h2.5l-5.5 6.3L18.5 18h-5l-4-5.2L5.5 18H3l6-6.8L3 2h5l3.5 4.7L15.5 2zm-1 14h1.4L6.5 3.5H5L14.5 16z"/>
   </svg>
 );
 
@@ -768,7 +768,7 @@ function AppContent() {
                   onClick={() => handleYoutubeViewTypeChange('video')}
                   className={`cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
                     youtubeViewType === 'video'
-                      ? 'bg-white text-blue-600 shadow-sm'
+                      ? 'bg-white text-teal-700 shadow-sm'
                       : 'text-gray-600 hover:text-gray-800'
                   }`}
                   disabled={isTranscriptLoading}
@@ -780,7 +780,7 @@ function AppContent() {
                   onClick={() => handleYoutubeViewTypeChange('transcript')}
                   className={`cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
                     youtubeViewType === 'transcript'
-                      ? 'bg-white text-purple-600 shadow-sm'
+                      ? 'bg-white text-teal-700 shadow-sm'
                       : 'text-gray-600 hover:text-gray-800'
                   }`}
                   disabled={isTranscriptLoading}
@@ -841,7 +841,7 @@ function AppContent() {
                     
                     {/* Transcript View */}
                     {youtubeViewType === 'transcript' && (
-                      <div className={`flex-1 bg-white rounded-lg shadow-lg relative transition-all duration-300 ${
+                      <div className={`absolute inset-0 bg-white rounded-lg shadow-lg border border-gray-200 transition-all duration-300 ${
                         isYoutubeViewTransitioning ? 'opacity-0' : 'opacity-100'
                       }`}>
                         {/* Transcript Loading Overlay */}
@@ -858,7 +858,7 @@ function AppContent() {
                         <div className={`h-full p-6 overflow-y-auto rounded-lg transition-all duration-300 ${
                           isTranscriptLoading ? 'opacity-50 pointer-events-none' : 'opacity-100'
                         }`}>
-                          <div className="text-sm leading-relaxed text-gray-700 whitespace-pre-line overflow-y-auto">
+                          <div className="text-sm leading-relaxed text-gray-700 whitespace-pre-line">
                             {actualTranscript || 'Enter a YouTube URL and click Start to see the transcript here.'}
                           </div>
                         </div>
@@ -955,8 +955,7 @@ function AppContent() {
                               : 'text-gray-600 hover:text-gray-800'
                           }`}
                         >
-                          <Icon className="w-3 h-3" />
-                          {platformName}
+                          <Icon className="w-4 h-4" />
                         </button>
                       );
                     })}
@@ -966,15 +965,13 @@ function AppContent() {
               {/* Active Platform Posts Container */}
               {(() => {
                 const activePosts = platformPosts[activePlatformTab] || [];
-                const platformBg = activePlatformTab === 'twitter' ? 'bg-gray-50 border-gray-200' : 'bg-blue-50 border-blue-200';
-
                 return (
-                  <div className={`flex-1 min-h-0 ${platformBg} rounded-lg border p-4 relative overflow-visible`}>
+                  <div className={`flex-1 min-h-0 bg-gray-50 border-gray-200 rounded-lg border p-4 relative overflow-hidden`}>
                     {/* Normal view - scrollable platform posts */}
                     <div className={`h-full transition-all duration-300 ${
                       expandedPost?.platform === activePlatformTab ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
                     }`}>
-                      <div className="h-full space-y-3 pr-2">
+                      <div className="h-full space-y-3 pr-2 overflow-y-auto">
                         {activePosts.map((post, index) => (
                           <div
                             key={index}
@@ -990,7 +987,6 @@ function AppContent() {
                             </p>
                             <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
                               <span>Topic {post.topic_id}</span>
-                              <span>{post.content_strategy}</span>
                             </div>
                           </div>
                         ))}
@@ -1054,15 +1050,6 @@ function AppContent() {
                             title="Close (ESC)"
                           >
                             <X className="w-3 h-3 text-gray-500 group-hover:text-gray-700" />
-                          </button>
-                          
-                          {/* Send button */}
-                          <button
-                            onClick={handleSend}
-                            className="cursor-pointer p-3 bg-gradient-to-r from-teal-600 to-teal-400 hover:bg-teal-500 rounded-lg transition-colors group"
-                            title="Send"
-                          >
-                            <Send className="w-3 h-3 text-white" />
                           </button>
                           
                           {/* Copy button */}
