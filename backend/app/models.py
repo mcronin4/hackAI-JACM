@@ -2,7 +2,6 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from enum import Enum
 
-
 class TopicExtractionRequest(BaseModel):
     text: str = Field(..., description="The text content to extract topics from")
 
@@ -138,3 +137,17 @@ class ContentGenerationOnlyResponse(BaseModel):
     successful_generations: int = Field(..., description="Number of successful generations")
     processing_time: float = Field(..., description="Total processing time")
     error: Optional[str] = Field(None, description="Error message if generation failed") 
+
+    # YouTube Conversion Models
+class YouTubeProcessRequest(BaseModel):
+    url: str = Field(..., description="The YouTube video URL to be processed.")
+
+class YouTubeProcessResponse(BaseModel):
+    success: bool = Field(..., description="Indicates if the entire process was successful.")
+    video_id: Optional[str] = Field(None, description="The unique identifier for the YouTube video.")
+    video_title: Optional[str] = Field(None, description="The title of the YouTube video.")
+    video_duration: Optional[int] = Field(None, description="The duration of the video in seconds.")
+    mp3_file_path: Optional[str] = Field(None, description="The local server path to the downloaded MP3 file.")
+    transcript: Optional[str] = Field(None, description="The full, AI-generated transcript of the video's audio.")
+    processing_time_seconds: float = Field(..., description="Total time taken for the entire process.")
+    error_message: Optional[str] = Field(None, description="Details of any error that occurred.")

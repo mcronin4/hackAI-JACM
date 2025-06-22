@@ -2,6 +2,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import router
 import logging
+import time
+from contextlib import asynccontextmanager
+import google.generativeai as genai  # For Gemini API
+from langgraph.graph import StateGraph  # For workflow
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

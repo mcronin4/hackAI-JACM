@@ -8,12 +8,15 @@ from app.models import (
     EmotionTargetingOnlyRequest,
     EmotionTargetingOnlyResponse,
     ContentGenerationOnlyRequest,
-    ContentGenerationOnlyResponse
+    ContentGenerationOnlyResponse,
+    YouTubeProcessRequest,
+    YouTubeProcessResponse
 )
 from app.services.content_pipeline import ContentPipelineService, ContentPipelineError
 from app.services.topic_service import TopicExtractionService, TopicExtractionError
 from app.services.emotion_service import EmotionTargetingService, EmotionTargetingError
 from app.services.content_generation_service import ContentGenerationOnlyService, ContentGenerationOnlyError
+from app.services.youtube_service import YouTubeService, YouTubeConversionError
 from typing import Dict, Any
 import logging
 
@@ -45,6 +48,9 @@ def get_content_service() -> ContentGenerationOnlyService:
 
 
 # INDIVIDUAL AGENT ENDPOINTS
+def get_youtube_service() -> YouTubeService:
+    """Dependency injection for YouTube conversion service"""
+    return YouTubeService()
 
 @router.post(
     "/extract-topics",
@@ -282,6 +288,74 @@ async def generate_posts(
 
 # UTILITY ENDPOINTS
 
+@router.post(
+    "/youtube/process",
+    response_model=YouTubeProcessResponse,
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid YouTube URL or processing failed"},
+        500: {"model": ErrorResponse, "description": "Internal server error"}
+    },
+    summary="Process YouTube Video to Audio and Transcript",
+    description="Accepts a YouTube URL, downloads the audio, converts it to MP3, and generates a transcript."
+)
+async def process_youtube_video(
+    request: YouTubeProcessRequest,
+    youtube_service: YouTubeService = Depends(get_youtube_service)
+) -> YouTubeProcessResponse:
+    """
+    This endpoint orchestrates the entire process:
+    1.  Takes a YouTube URL.
+    2.  Uses `yt-dlp` to download the best audio stream.
+    3.  Converts the audio to an MP3 file.
+    4.  Uses Deepgram to transcribe the MP3.
+    5.  Returns the transcript and other metadata.
+    """
+    try:
+        logger.info(f"Received request to process YouTube URL: {request.url}")
+        
+        # The youtube_service.convert_to_mp3 now handles the entire pipeline
+        result = youtube_service.convert_to_mp3(request.url)
+        
+        if not result.get("success"):
+            # Raise an HTTPException to be caught and returned as a proper error response
+            raise HTTPException(
+                status_code=400,
+                detail=result.get("error", "An unknown error occurred during processing.")
+            )
+
+        logger.info(f"Successfully processed video: {result.get('video_title')}")
+        
+        return YouTubeProcessResponse(
+            success=True,
+            video_id=result.get("video_id"),
+            video_title=result.get("video_title"),
+            video_duration=result.get("video_duration"),
+            mp3_file_path=result.get("audio_stream", {}).get("url"),
+            transcript=result.get("transcript"),
+            processing_time_seconds=result.get("processing_time"),
+            error_message=None
+        )
+        
+    except YouTubeConversionError as e:
+        logger.error(f"A known error occurred during YouTube processing: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"An unexpected server error occurred: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal server error occurred.")
+
+
+@router.get(
+    "/youtube/status",
+    summary="YouTube Service Status",
+    description="Check the status of the local YouTube processing service (yt-dlp)."
+)
+async def youtube_service_status(
+    youtube_service: YouTubeService = Depends(get_youtube_service)
+) -> Dict[str, Any]:
+    """Get the status of the YouTube conversion service"""
+    return youtube_service.get_service_status()
+
+
 @router.get(
     "/health",
     summary="Health check",
@@ -315,7 +389,6 @@ async def health_check(
                 "detail": str(e)
             }
         )
-
 
 @router.get(
     "/pipeline/example",
@@ -366,4 +439,23 @@ async def get_supported_platforms(
                 "error": "Failed to retrieve platform information",
                 "detail": str(e)
             }
-        ) 
+        )
+
+@router.get(
+    "/youtube/example",
+    summary="Get YouTube conversion example",
+    description="Get an example of the YouTube conversion response format"
+)
+async def get_youtube_example_response() -> YouTubeProcessResponse:
+    """Return an example response to show the expected YouTube conversion format"""
+    from app.models import AudioStream
+    
+    return YouTubeProcessResponse(
+        success=True,
+        video_id="dQw4w9WgXcQ",
+        video_title="Rick Astley - Never Gonna Give You Up (Official Music Video)",
+        video_duration="3:33",
+        mp3_file_path="https://example.com/audio.mp3",
+        processing_time_seconds=2.45,
+        error_message=None
+    ) 
