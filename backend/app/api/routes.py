@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import StreamingResponse
 from app.models import (
     ContentPipelineRequest,
     ContentPipelineResponse,
@@ -19,6 +20,7 @@ from app.models import (
     PlatformPost
 )
 from app.services.content_pipeline import ContentPipelineService, ContentPipelineError
+from app.services.streaming_pipeline import StreamingPipelineService, StreamingPipelineError
 from app.services.topic_service import TopicExtractionService, TopicExtractionError
 from app.services.emotion_service import EmotionTargetingService, EmotionTargetingError
 from app.services.content_generation_service import ContentGenerationOnlyService, ContentGenerationOnlyError
@@ -28,6 +30,8 @@ from app.services.social_media.base_platform import PostRequest
 from app.services.social_media.platform_factory import PlatformFactory
 from typing import Dict, Any
 import logging
+import json
+import asyncio
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -39,6 +43,11 @@ router = APIRouter(prefix="/api/v1", tags=["content-pipeline"])
 def get_pipeline_service() -> ContentPipelineService:
     """Dependency injection for content pipeline service"""
     return ContentPipelineService()
+
+
+def get_streaming_pipeline_service() -> StreamingPipelineService:
+    """Dependency injection for streaming pipeline service"""
+    return StreamingPipelineService()
 
 
 def get_topic_service() -> TopicExtractionService:
@@ -673,5 +682,64 @@ async def get_all_platforms_status(
             detail={
                 "error": "Internal server error",
                 "detail": "An unexpected error occurred getting platforms status"
+            }
+        )
+
+@router.post(
+    "/stream-posts",
+    responses={
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse}
+    },
+    summary="Stream social media posts as they're generated",
+    description="Stream social media posts as they're generated through the pipeline"
+)
+async def stream_posts(
+    request: ContentPipelineRequest,
+    streaming_pipeline_service: StreamingPipelineService = Depends(get_streaming_pipeline_service)
+):
+    """
+    Stream social media posts as they're generated through the pipeline.
+    
+    This endpoint uses Server-Sent Events (SSE) to stream posts as they're generated.
+    """
+    try:
+        logger.info(f"Processing stream request for {len(request.text)} characters of text")
+        
+        async def generate_posts_stream():
+            async for event in streaming_pipeline_service.stream_posts(
+                text=request.text,
+                original_url=request.original_url,
+                target_platforms=request.target_platforms
+            ):
+                yield event
+        
+        return StreamingResponse(
+            generate_posts_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "Cache-Control"
+            }
+        )
+        
+    except StreamingPipelineError as e:
+        logger.error(f"Streaming pipeline error: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "Streaming pipeline processing failed",
+                "detail": str(e)
+            }
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in streaming pipeline: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Internal server error",
+                "detail": "An unexpected error occurred during streaming pipeline processing"
             }
         ) 
