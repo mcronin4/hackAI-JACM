@@ -7,7 +7,8 @@ interface AuthState {
   isLoading: boolean
   
   // Actions
-  loginWithX: () => Promise<void>
+  signup: (email: string, xHandle: string, password: string) => Promise<{ success: boolean; error?: string }>
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
   logout: () => Promise<void>
   checkAuthStatus: () => Promise<void>
   resetAuthState: () => void
@@ -18,7 +19,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   isLoggedIn: false,
   isLoading: false,
 
-  loginWithX: async () => {
+  signup: async (email: string, xHandle: string, password: string) => {
     set({ isLoading: true })
     
     try {
@@ -31,17 +32,53 @@ export const useAuthStore = create<AuthState>((set) => ({
       })
       
       if (error) {
-        console.error('X OAuth error:', error)
         set({ isLoading: false })
-        throw error
+        return { success: false, error: error.message }
       }
       
-      // The redirect will happen automatically
-      // We don't need to set user data here as it will be handled in the callback
+      if (data.user) {
+        // Get user profile
+        const { data: userInfo } = await supabase
+          .from('user_info')
+          .select('*')
+          .eq('user_id', data.user.id)
+          .single()
+        
+        if (userInfo) {
+          const userProfile: UserProfile = {
+            id: data.user.id,
+            email: userInfo.email,
+            username: userInfo.username,
+            full_name: userInfo.full_name,
+            avatar_url: userInfo.avatar_url,
+            x_oauth_token: null,
+            x_oauth_secret: null,
+            x_user_id: userInfo.x_user_id,
+            x_screen_name: userInfo.x_screen_name,
+            x_profile_image_url: userInfo.x_profile_image_url,
+            x_handle: userInfo.x_handle,
+            linkedin_handle: userInfo.linkedin_handle,
+            created_at: userInfo.created_at,
+            updated_at: userInfo.updated_at
+          }
+          
+          set({ 
+            isLoading: false, 
+            isLoggedIn: true, 
+            user: userProfile 
+          })
+          
+          return { success: true }
+        }
+      }
+      
+      set({ isLoading: false })
+      return { success: false, error: 'Login failed' }
       
     } catch (error) {
       console.error('Login error:', error)
       set({ isLoading: false })
+      return { success: false, error: 'An unexpected error occurred' }
     }
   },
 
@@ -51,18 +88,16 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       console.log('Attempting to logout...')
       
-      // Try to sign out from Supabase
+      // Sign out from Supabase
       const { error } = await supabase.auth.signOut()
       
       if (error) {
         console.error('Logout error:', error)
-        // Even if server logout fails, we should clear local state
-        console.log('Server logout failed, but clearing local state...')
       } else {
         console.log('Successfully logged out from server')
       }
       
-      // Always clear user data locally, regardless of server response
+      // Always clear user data locally
       set({ 
         user: null, 
         isLoggedIn: false,
@@ -104,7 +139,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         console.log('User ID:', session.user.id)
         console.log('User email:', session.user.email)
         
-        // Get user info from our expanded user_info table
+        // Get user info from our user_info table
         const { data: userInfo, error: userInfoError } = await supabase
           .from('user_info')
           .select('*')
@@ -199,29 +234,33 @@ export const useAuthStore = create<AuthState>((set) => ({
           }
         }
         
-        // Create user profile from database data
-        const userProfile: UserProfile = {
-          id: session.user.id,
-          email: userInfo?.email || session.user.email,
-          username: userInfo?.username || null,
-          full_name: userInfo?.full_name || null,
-          avatar_url: userInfo?.avatar_url || null,
-          x_oauth_token: userInfo?.x_oauth_token || null,
-          x_oauth_secret: userInfo?.x_oauth_secret || null,
-          x_user_id: userInfo?.x_user_id || null,
-          x_screen_name: userInfo?.x_screen_name || null,
-          x_profile_image_url: userInfo?.x_profile_image_url || null,
-          x_handle: userInfo?.x_handle || null,
-          linkedin_handle: userInfo?.linkedin_handle || null,
-          created_at: userInfo?.created_at || session.user.created_at,
-          updated_at: userInfo?.updated_at || null
+        if (userInfo) {
+          // Create user profile from database data
+          const userProfile: UserProfile = {
+            id: session.user.id,
+            email: userInfo.email || session.user.email,
+            username: userInfo.username || null,
+            full_name: userInfo.full_name || null,
+            avatar_url: userInfo.avatar_url || null,
+            x_oauth_token: null,
+            x_oauth_secret: null,
+            x_user_id: userInfo.x_user_id || null,
+            x_screen_name: userInfo.x_screen_name || null,
+            x_profile_image_url: userInfo.x_profile_image_url || null,
+            x_handle: userInfo.x_handle || null,
+            linkedin_handle: userInfo.linkedin_handle || null,
+            created_at: userInfo.created_at || session.user.created_at,
+            updated_at: userInfo.updated_at || null
+          }
+          
+          set({ 
+            isLoading: false, 
+            isLoggedIn: true, 
+            user: userProfile 
+          })
+        } else {
+          set({ isLoading: false, isLoggedIn: false, user: null })
         }
-        
-        set({ 
-          isLoading: false, 
-          isLoggedIn: true, 
-          user: userProfile 
-        })
       } else {
         set({ isLoading: false, isLoggedIn: false, user: null })
       }
