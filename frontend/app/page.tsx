@@ -59,7 +59,7 @@ interface APIResponse {
 }
 
 function AppContent() {
-  const { user, isLoggedIn, isLoading, loginWithX, logout, checkAuthStatus } = useAuthStore();
+  const { user, isLoggedIn, isLoading, logout, checkAuthStatus } = useAuthStore();
   const searchParams = useSearchParams();
   const [content, setContent] = useState('');
   const [contentType, setContentType] = useState<'text' | 'youtube'>('text');
@@ -177,14 +177,18 @@ function AppContent() {
     // Use transcript text if provided, otherwise use the content from the text box
     const textToProcess = transcriptText || content;
     
+    console.log('USERUSERUSERUSERUSERUSER User:', user);
+
     // Build request body with selected platforms
     const body: {
       text: string;
       target_platforms: string[];
+      x_handle?: string;
       original_url?: string;
     } = {
       text: textToProcess,
-      target_platforms: selectedPlatforms
+      target_platforms: selectedPlatforms,
+      x_handle: user?.x_handle || undefined,
     };
     
     // Add original_url if we have a YouTube URL

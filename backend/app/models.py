@@ -65,6 +65,7 @@ class ContentPipelineRequest(BaseModel):
     text: str = Field(..., description="The original text to process")
     original_url: Optional[str] = Field(None, description="URL of the original content (optional)")
     user_id: Optional[str] = Field(None, description="User ID for context posts (optional)")
+    x_handle: Optional[str] = Field(None, description="Twitter/X handle for context posts (optional)")
     target_platforms: Optional[List[str]] = Field(
         default=["twitter"], 
         description="Target social media platforms"

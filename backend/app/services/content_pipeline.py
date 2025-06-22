@@ -321,11 +321,21 @@ class ContentPipelineService:
         }
     
     async def get_user_context_posts(self, user_id: str, platform: str = None) -> List[Dict[str, Any]]:
-        """Get user context posts from database"""
+        """Get user context posts from database by user_id"""
         try:
             return await self.context_db.get_user_context_posts(user_id, platform)
         except Exception as e:
             # Log error but don't fail the pipeline
+            logger.error(f"Error getting context posts for user {user_id}: {str(e)}")
+            return []
+    
+    async def get_context_posts_by_handle(self, x_handle: str, platform: str = None) -> List[Dict[str, Any]]:
+        """Get context posts from database by x_handle"""
+        try:
+            return await self.context_db.get_context_posts_by_handle(x_handle, platform)
+        except Exception as e:
+            # Log error but don't fail the pipeline
+            logger.error(f"Error getting context posts for handle {x_handle}: {str(e)}")
             return []
 
 

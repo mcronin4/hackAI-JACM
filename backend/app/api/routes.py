@@ -285,10 +285,20 @@ async def generate_posts(
         logger.info(f"Processing pipeline request for {len(request.text)} characters of text")
 
         context_posts = {}
-        if request.user_id:
+        if request.x_handle:
+            logger.info(f"Retrieving context posts for x_handle @{request.x_handle}")
+            for platform in request.target_platforms:
+                # Map platform names for database lookup (twitter -> x)
+                db_platform = "x" if platform == "twitter" else platform
+                platform_context = await pipeline_service.get_context_posts_by_handle(request.x_handle, db_platform)
+                context_posts[platform] = sorted([post["post_content"] for post in platform_context], key=len, reverse=True)[:10] # Sort by length and take the longest 10
+                logger.info(f"Found {len(context_posts[platform])} context posts for platform {platform} (db: {db_platform})")
+        elif request.user_id:
+            logger.info(f"Retrieving context posts for user_id {request.user_id}")
             for platform in request.target_platforms:
                 platform_context = await pipeline_service.get_user_context_posts(request.user_id, platform)
                 context_posts[platform] = sorted([post["post_content"] for post in platform_context], key=len, reverse=True)[:10] # Sort by length and take the longest 10
+                logger.info(f"Found {len(context_posts[platform])} context posts for platform {platform}")
         
         result = await pipeline_service.process_content(
             text=request.text,
@@ -740,9 +750,29 @@ async def stream_posts(
     try:
         logger.info(f"Processing stream request for {len(request.text)} characters of text")
         
+        # Get context posts from database if x_handle is provided
+        context_posts = {}
+        if request.x_handle:
+            logger.info(f"Retrieving context posts for x_handle @{request.x_handle}")
+            for platform in request.target_platforms:
+                # Map platform names for database lookup (twitter -> x)
+                db_platform = "x" if platform == "twitter" else platform
+                platform_context = await streaming_pipeline_service.get_context_posts_by_handle(request.x_handle, db_platform)
+                context_posts[platform] = sorted([post["post_content"] for post in platform_context], key=len, reverse=True)[:10] # Sort by length and take the longest 10
+                logger.info(f"Found {len(context_posts[platform])} context posts for platform {platform} (db: {db_platform})")
+        elif request.user_id:
+            logger.info(f"Retrieving context posts for user_id {request.user_id}")
+            for platform in request.target_platforms:
+                platform_context = await streaming_pipeline_service.get_user_context_posts(request.user_id, platform)
+                context_posts[platform] = sorted([post["post_content"] for post in platform_context], key=len, reverse=True)[:10] # Sort by length and take the longest 10
+                logger.info(f"Found {len(context_posts[platform])} context posts for platform {platform}")
+        else:
+            logger.info("No x_handle or user_id provided, skipping context post retrieval")
+        
         async def generate_posts_stream():
             async for event in streaming_pipeline_service.stream_posts(
                 text=request.text,
+                context_posts=context_posts,
                 original_url=request.original_url,
                 target_platforms=request.target_platforms
             ):
@@ -777,3 +807,193 @@ async def stream_posts(
                 "detail": "An unexpected error occurred during streaming pipeline processing"
             }
         ) 
+    
+@router.post(
+    "/extract-audience",
+    response_model=AudienceExtractionOnlyResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse}
+    },
+    summary="Extract target audience from text",
+    description="Analyze text content to identify and describe the target audience"
+)
+async def extract_audience_only(
+    request: AudienceExtractionOnlyRequest,
+    audience_service: AudienceExtractionService = Depends(get_audience_service)
+) -> AudienceExtractionOnlyResponse:
+    """
+    Extract target audience from text content.
+    This endpoint analyzes the content to identify who the target audience is,
+    including demographics, interests, pain points, and goals.
+    """
+    try:
+        logger.info(f"Processing audience extraction request for {len(request.text)} characters of text")
+        
+        result = await audience_service.extract_audience(text=request.text)
+        
+        if result['success']:
+            logger.info(f"Successfully extracted audience in {result['processing_time']:.2f} seconds")
+        else:
+            logger.warning(f"Audience extraction failed: {result['error']}")
+        
+        return AudienceExtractionOnlyResponse(
+            success=result['success'],
+            audience_summary=result.get('audience_summary', ''),
+            processing_time=result['processing_time'],
+            error=result.get('error')
+        )
+        
+    except AudienceExtractionError as e:
+        logger.error(f"Audience extraction error: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "Audience extraction failed",
+                "detail": str(e)
+            }
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in audience extraction: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Internal server error",
+                "detail": "An unexpected error occurred during audience extraction"
+            }
+        )
+
+
+@router.post(
+    "/match-style",
+    response_model=StyleMatchingOnlyResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse}
+    },
+    summary="Match content style to user's previous posts",
+    description="Adapt content to match the writing style of user's previous posts while preserving meaning"
+)
+async def match_style_only(
+    request: StyleMatchingOnlyRequest,
+    style_service: StyleMatchingService = Depends(get_style_matching_service)
+) -> StyleMatchingOnlyResponse:
+    """
+    Match content style to user's previous posts.
+    This endpoint analyzes user's context posts to understand their writing style,
+    then adapts the provided content to match that style while preserving meaning and emotion.
+    """
+    try:
+        logger.info(f"Processing style matching request for {len(request.original_content)} char content with {len(request.context_posts)} context posts")
+        
+        result = await style_service.match_style(
+            original_content=request.original_content,
+            context_posts=request.context_posts,
+            platform=request.platform,
+            target_length=request.target_length
+        )
+        
+        if result['success']:
+            logger.info(f"Successfully matched style in {result['processing_time']:.2f} seconds, skipped: {result['skipped']}")
+        else:
+            logger.warning(f"Style matching failed: {result['error']}")
+        
+        return StyleMatchingOnlyResponse(
+            success=result['success'],
+            final_content=result.get('final_content', ''),
+            style_analysis=result.get('style_analysis', ''),
+            similar_posts_count=result.get('similar_posts_count', 0),
+            skipped=result.get('skipped', False),
+            processing_time=result['processing_time'],
+            error=result.get('error')
+        )
+        
+    except StyleMatchingError as e:
+        logger.error(f"Style matching error: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "Style matching failed",
+                "detail": str(e)
+            }
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in style matching: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Internal server error",
+                "detail": "An unexpected error occurred during style matching"
+            }
+        )
+
+
+# Twitter Context Endpoints
+
+@router.post(
+    "/user/twitter-context",
+    response_model=TwitterContextResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse}
+    },
+    summary="Set up Twitter context for user",
+    description="Scrape and save Twitter posts to provide context for content generation"
+)
+async def setup_twitter_context(
+    request: TwitterContextRequest,
+    context_service: UserContextService = Depends(get_user_context_service)
+) -> TwitterContextResponse:
+    """
+    Set up Twitter context for a user by scraping their recent posts.
+    
+    This endpoint will:
+    1. Check if the user already has context data
+    2. If not, scrape up to 20 recent posts from their Twitter profile
+    3. Select the 10 longest posts for better context
+    4. Save the posts to the database for future content generation
+    
+    If the user already has context data, it will return success without re-scraping.
+    """
+    try:
+        logger.info(f"Setting up Twitter context for user {request.user_id} with handle @{request.twitter_handle}")
+        
+        result = await context_service.setup_user_twitter_context(
+            user_id=request.user_id,
+            twitter_handle=request.twitter_handle
+        )
+        
+        if result['success']:
+            logger.info(f"Successfully set up context for user {request.user_id}")
+        else:
+            logger.warning(f"Context setup failed for user {request.user_id}: {result.get('error')}")
+        
+        return TwitterContextResponse(
+            success=result['success'],
+            message=result['message'],
+            posts_scraped=result['posts_scraped'],
+            posts_saved=result['posts_saved'],
+            twitter_handle=result.get('twitter_handle'),
+            skipped=result.get('skipped', False),
+            error=result.get('error')
+        )
+        
+    except UserContextError as e:
+        logger.error(f"User context error: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "Failed to set up Twitter context",
+                "detail": str(e)
+            }
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error setting up Twitter context: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Internal server error",
+                "detail": "An unexpected error occurred while setting up Twitter context"
+            }
+        )
+    

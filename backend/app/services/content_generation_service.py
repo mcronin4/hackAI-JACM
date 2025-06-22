@@ -11,8 +11,8 @@ load_dotenv()
 class ContentGenerationOnlyService:
     def __init__(self):
         # Initialize the agent with configuration from environment
-        model_name = os.getenv("GOOGLE_MODEL_NAME", "gemini-2.5-flash")
-        temperature = float(os.getenv("GOOGLE_TEMPERATURE", "0.3"))
+        model_name = os.getenv("GOOGLE_MODEL_NAME", "gemini-2.5-pro")
+        temperature = float(os.getenv("GOOGLE_TEMPERATURE", "0.5"))
         
         self.agent = ContentGeneratorAgent(
             model_name=model_name,
