@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { useAuthStore } from '@/lib/auth-store'
+import Image from 'next/image'
 import { XLogo } from '@/lib/x-logo'
 import { LogOut } from 'lucide-react'
+import { UserProfile } from '@/lib/supabase'
 
 interface ProfileDropdownProps {
-  user: any
+  user: UserProfile
   isLoading: boolean
   onLogout: () => void
 }
@@ -42,9 +43,11 @@ export function ProfileDropdown({ user, isLoading, onLogout }: ProfileDropdownPr
         className="w-10 h-10 rounded-full overflow-hidden border-2 border-gray-200 hover:border-gray-300 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
       >
         {user?.avatar_url || user?.x_profile_image_url ? (
-          <img
-            src={user.avatar_url || user.x_profile_image_url}
+          <Image
+            src={user.avatar_url || user.x_profile_image_url || ''}
             alt={user.x_handle || user.full_name || 'Profile'}
+            width={40}
+            height={40}
             className="w-full h-full object-cover"
           />
         ) : (
@@ -62,9 +65,11 @@ export function ProfileDropdown({ user, isLoading, onLogout }: ProfileDropdownPr
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 rounded-full overflow-hidden">
                 {user?.avatar_url || user?.x_profile_image_url ? (
-                  <img
-                    src={user.avatar_url || user.x_profile_image_url}
+                  <Image
+                    src={user.avatar_url || user.x_profile_image_url || ''}
                     alt={user.x_handle || user.full_name || 'Profile'}
+                    width={40}
+                    height={40}
                     className="w-full h-full object-cover"
                   />
                 ) : (

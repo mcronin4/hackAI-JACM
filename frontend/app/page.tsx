@@ -1,5 +1,6 @@
 "use client";
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
+import Image from 'next/image';
 import { ArrowRight, Loader2, CheckCircle, X, Send, Copy, FileText, Youtube, Video, FileText as Transcript } from 'lucide-react';
 import { useAuthStore } from '@/lib/auth-store';
 import { ProfileDropdown } from '@/components/ProfileDropdown';
@@ -56,8 +57,8 @@ interface APIResponse {
   error?: string;
 }
 
-function App() {
-  const { user, isLoggedIn, isLoading, loginWithX, logout, checkAuthStatus, resetAuthState } = useAuthStore();
+function AppContent() {
+  const { user, isLoggedIn, isLoading, loginWithX, logout, checkAuthStatus } = useAuthStore();
   const searchParams = useSearchParams();
   const [content, setContent] = useState('');
   const [contentType, setContentType] = useState<'text' | 'youtube'>('text');
@@ -126,6 +127,9 @@ function App() {
         setContent('');
         setIsContentTransitioning(false);
       }, 150);
+    } else {
+      // If there's no content, don't show transition
+      setIsContentTransitioning(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contentType]); // content intentionally omitted to prevent infinite loop
@@ -385,17 +389,19 @@ function App() {
 
   const handleContentTypeChange = (newType: 'text' | 'youtube') => {
     if (newType !== contentType) {
-      setIsContentTransitioning(true);
+      console.log('Switching content type from', contentType, 'to', newType);
       setContentType(newType);
       
-      // Focus the appropriate input after transition
+      // Focus the appropriate input after a brief delay to ensure DOM is updated
       setTimeout(() => {
         if (newType === 'text' && textareaRef.current) {
           textareaRef.current.focus();
+          console.log('Focused text area');
         } else if (newType === 'youtube' && youtubeInputRef.current) {
           youtubeInputRef.current.focus();
+          console.log('Focused YouTube input');
         }
-      }, 200);
+      }, 100);
     }
   };
 
@@ -528,9 +534,11 @@ function App() {
           } flex-shrink-0`}>
             <div className="flex items-end justify-between mb-8">
               <div className="flex items-fi">
-                <img 
+                <Image 
                   src="/chameleon_logo.png" 
                   alt="Chameleon Logo" 
+                  width={80}
+                  height={80}
                   className={`transition-all duration-500 mr-4 ${
                     isStarted || (contentType === 'youtube' && hasValidYouTubeUrl)
                       ? 'w-8 h-8' 
@@ -690,7 +698,7 @@ function App() {
                   value={content}
                   onChange={handleYouTubeInputChange}
                   placeholder={getPlaceholderText()}
-                  className="w-full p-4 rounded-lg focus:outline-none shadow-lg text-sm bg-white text-black flex-shrink-0 h-16"
+                  className="w-full p-4 rounded-lg focus:outline-none shadow-lg text-sm bg-white text-black flex-shrink-0 h-16 border border-gray-200"
                   disabled={isProcessing}
                 />
                 
@@ -999,6 +1007,19 @@ function App() {
         }
       `}</style>
     </div>
+  );
+}
+
+function App() {
+  return (
+    <Suspense fallback={<div className="h-screen bg-white flex items-center justify-center">
+      <div className="flex flex-col items-center gap-3">
+        <Loader2 className="w-8 h-8 text-teal-500 animate-spin" />
+        <p className="text-sm text-gray-600">Loading...</p>
+      </div>
+    </div>}>
+      <AppContent />
+    </Suspense>
   );
 }
 
