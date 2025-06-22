@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from datetime import datetime
 import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 load_dotenv()
 
@@ -20,7 +21,7 @@ class ContentPipelineService:
     """
     Unified service that chains together audience extraction, topic extraction, emotion analysis, content generation, and style matching.
     
-    Flow: Text → Audience → Topics → Enhanced Topics (with emotions + audience) → Content → Style Matching → Final Output
+    Flow: Text → Audience → Topics → [Per Topic in Parallel: Enhanced Topics (with emotions + audience) → Content → Style Matching] → Final Output
     """
     
     def __init__(self):
@@ -56,7 +57,8 @@ class ContentPipelineService:
 
     ) -> Dict[str, Any]:
         """
-        Process text through the complete pipeline: extract audience → extract topics → analyze emotions → generate content → style matching
+        Process text through the complete pipeline with full parallelization: 
+        extract audience → extract topics → [parallel per topic: analyze emotions → generate content → style matching]
         
         Args:
             text: The original text to process
@@ -113,175 +115,370 @@ class ContentPipelineService:
             for i, topic in enumerate(topic_result['topics'], 1):
                 logger.info(f"📝 Topic {i}: {topic['topic_name']}")
             
-            # Step 3: Analyze emotions for the extracted topics with audience context
-            emotion_result = self.emotion_analyzer.analyze_emotions(
-                topics=topic_result['topics'],
-                audience_context=audience_context
-            )
-            
-            if not emotion_result['success']:
-                return self._create_error_response(
-                    f"Emotion analysis failed: {emotion_result['error']}", 
-                    start_time
+            # Step 3-5: Process each topic in parallel through the remaining pipeline
+            # Each topic goes through: emotion analysis → content generation → style matching sequentially
+            # But all topics can run this workflow in parallel with each other
+            tasks = []
+            for topic in topic_result['topics']:
+                task = self._process_topic_pipeline(
+                    topic=topic,
+                    text=text,
+                    audience_context=audience_context,
+                    original_url=original_url,
+                    target_platforms=target_platforms,
+                    context_posts=context_posts
                 )
+                tasks.append(task)
             
-            if not emotion_result['emotion_analysis']:
-                return self._create_error_response(
-                    "No emotion analysis results were generated", 
-                    start_time
-                )
+            # Execute all topic pipelines in parallel
+            logger.info(f"🚀 Step 3-5/5 - Processing {len(tasks)} topics in parallel (each topic: emotion analysis → content generation → style matching)")
+            topic_results = await asyncio.gather(*tasks, return_exceptions=True)
             
-            logger.info(f"✅ Step 3/5 - Emotion analysis completed in {emotion_result['processing_time']:.2f}s, analyzed {len(emotion_result['emotion_analysis'])} topics")
-            for i, enhanced_topic in enumerate(emotion_result['emotion_analysis'], 1):
-                logger.info(f"📝 Topic {i} Emotion: {enhanced_topic['primary_emotion']} - {enhanced_topic['reasoning'][:100]}{'...' if len(enhanced_topic['reasoning']) > 100 else ''}")
+            # Process results and organize by platform
+            platform_posts = {}
+            for platform in target_platforms:
+                platform_posts[platform] = []
             
-            # Step 4: Generate content for each enhanced topic and platform
-            platform_posts = {}  # Organize posts by platform
             successful_generations = 0
             failed_generations = []
-            content_generation_time = 0
-
+            total_emotion_time = 0
+            total_content_time = 0
+            total_style_time = 0
             
-            # Initialize platform_posts structure
-            for platform in target_platforms:
-                platform_posts[platform] = []
-            
-            # Initialize platform_posts structure
-            for platform in target_platforms:
-                platform_posts[platform] = []
-            
-            for enhanced_topic in emotion_result['emotion_analysis']:
-                for platform in target_platforms:
-                    try:
-                        content_result = self.content_generator.generate_content_for_topic(
-                            topic=enhanced_topic,
-                            original_text=text,
-                            original_url=original_url,
-                            platform=platform,
-                            audience_context=audience_context
-                        )
-                        
-                        if content_result['success']:
-                            # Store post with metadata for each platform
-                            post_data = {
-                                'post_content': content_result['final_post'],
-                                'topic_id': enhanced_topic['topic_id'],
-                                'topic_name': enhanced_topic['topic_name'],
-                                'primary_emotion': enhanced_topic['primary_emotion'],
-                                'content_strategy': content_result['content_strategy'],
-                                'processing_time': content_result['processing_time']
-                            }
-                            platform_posts[platform].append(post_data)
+            for result in topic_results:
+                if isinstance(result, Exception):
+                    failed_generations.append(f"Topic pipeline error: {str(result)}")
+                    continue
+                
+                if result['success']:
+                    # Add timing information
+                    total_emotion_time += result['emotion_time']
+                    total_content_time += result['content_time']
+                    total_style_time += result['style_time']
+                    
+                    # Organize posts by platform
+                    for platform_data in result['platform_results']:
+                        if platform_data['success']:
+                            platform_posts[platform_data['platform']].append({
+                                'post_content': platform_data['final_post'],
+                                'topic_id': result['topic']['topic_id'],
+                                'topic_name': result['topic']['topic_name'],
+                                'primary_emotion': result['emotion_analysis']['primary_emotion'],
+                                'content_strategy': platform_data['content_strategy'],
+                                'processing_time': platform_data['processing_time'],
+                                'style_matched': platform_data.get('style_matched', False)
+                            })
                             successful_generations += 1
-                            content_generation_time += content_result['processing_time']
                         else:
                             failed_generations.append(
-                                f"Topic {enhanced_topic['topic_id']}/{platform}: {content_result['error']}"
+                                f"Topic {result['topic']['topic_id']}/{platform_data['platform']}: {platform_data['error']}"
                             )
-                    
-                    except Exception as e:
-                        failed_generations.append(
-                            f"Topic {enhanced_topic['topic_id']}/{platform}: {str(e)}"
-                        )
+                else:
+                    failed_generations.append(f"Topic {result.get('topic', {}).get('topic_id', 'unknown')}: {result['error']}")
             
-            # Check if any content generation failed (fail entire flow as per requirements)
+            # Check if any content generation failed
             if failed_generations:
                 error_details = "; ".join(failed_generations)
                 return self._create_error_response(
-                    f"Content generation failed for some topics: {error_details}",
+                    f"Some topic processing failed: {error_details}",
                     start_time
                 )
             
-            logger.info(f"✅ Step 4/5 - Content generation completed in {content_generation_time:.2f}s, generated {successful_generations} posts")
+            total_processing_time = total_emotion_time + total_content_time + total_style_time
+            
+            logger.info(f"✅ Step 3-5/5 - Parallel processing completed in max({total_emotion_time:.2f}s emotion, {total_content_time:.2f}s content, {total_style_time:.2f}s style)")
+            logger.info(f"📊 Generated {successful_generations} posts total")
             for platform, posts in platform_posts.items():
                 for i, post in enumerate(posts, 1):
                     logger.info(f"📝 Generated Post {i} on {platform}: {post['post_content'][:150]}{'...' if len(post['post_content']) > 150 else ''}")
             
-            # Step 5: Apply style matching to each generated post
-            final_posts = {}  # Organize posts by platform
-            style_matching_time = 0
-            style_matching_failures = []
-
-            # Initialize final_posts structure
-            for platform in target_platforms:
-                final_posts[platform] = []
-
-            for platform, posts in platform_posts.items():      
-                for i, post in enumerate(posts):
-                    # Extract content before URL for style matching
-                    post_parts = post.rsplit(' ', 1)  # Split on last space
-                    if len(post_parts) == 2 and post_parts[1].startswith('http'):
-                        content_only = post_parts[0]
-                        url_part = post_parts[1]
-                    else:
-                        content_only = post
-                        url_part = ""
-                    
-                    # Apply style matching for each platform
-                    platform = target_platforms[i % len(target_platforms)]
-                    platform_context_posts = context_posts.get(platform, [])
-                    
-                    try:
-                        style_result = await self.style_matcher.match_style(
-                            original_content=content_only,
-                            context_posts=platform_context_posts,
-                            platform=platform,
-                            target_length=240  # Reserve space for URL
-                        )
-                        
-                        if style_result['success']:
-                            # Reconstruct final post with style-matched content + URL
-                            if url_part:
-                                final_post = f"{style_result['final_content']} {url_part}"
-                            else:
-                                final_post = style_result['final_content']
-                            final_posts[platform].append(final_post)
-                            style_matching_time += style_result['processing_time']
-                        else:
-                            # If style matching fails, fall back to original
-                            final_posts[platform].append(post)
-                            style_matching_failures.append(f"Post {i+1}: {style_result['error']}")
-                    
-                    except Exception as e:
-                        # If style matching fails, fall back to original
-                        final_posts.append(post)
-                        style_matching_failures.append(f"Post {i+1}: {str(e)}")
-
-            # Log style matching results
-            posts_processed = len(final_posts)
-            posts_with_failures = len(style_matching_failures)
-            posts_successfully_matched = posts_processed - posts_with_failures
-            logger.info(f"✅ Step 5/5 - Style matching completed in {style_matching_time:.2f}s, {posts_successfully_matched}/{posts_processed} posts processed successfully")
-            for i, final_post in enumerate(final_posts, 1):
-                logger.info(f"📝 Final Post {i}: {final_post[:150]}{'...' if len(final_post) > 150 else ''}")
-            
-            # Calculate final processing time
+            # Calculate total pipeline time
             end_time = datetime.now()
-            total_processing_time = (end_time - start_time).total_seconds()
+            total_pipeline_time = (end_time - start_time).total_seconds()
             
             return {
                 'success': True,
-                'generated_posts': final_posts,
-                'total_topics': topic_result['total_topics'],
-                'successful_generations': successful_generations,
-                'processing_time': total_processing_time,
-                'pipeline_details': {
+                'platform_posts': platform_posts,
+                'metadata': {
+                    'total_topics': len(topic_result['topics']),
+                    'successful_generations': successful_generations,
+                    'failed_generations': len(failed_generations),
                     'audience_extraction_time': audience_result['processing_time'],
                     'topic_extraction_time': topic_result['processing_time'],
-                    'emotion_analysis_time': emotion_result['processing_time'],
-                    'content_generation_time': content_generation_time,
-                    'style_matching_time': style_matching_time,
-                    'style_matching_failures': style_matching_failures,
-                    'platforms_processed': target_platforms
-                }
+                    'parallel_processing_time': total_processing_time,
+                    'total_pipeline_time': total_pipeline_time,
+                    'audience_summary': audience_context[:200] + '...' if len(audience_context) > 200 else audience_context,
+                    'original_url': original_url,
+                    'target_platforms': target_platforms
+                },
+                'error': None
             }
             
         except Exception as e:
-            return self._create_error_response(
-                f"Pipeline processing error: {str(e)}", 
-                start_time
+            logger.error(f"Pipeline error: {str(e)}")
+            return self._create_error_response(f"Pipeline execution failed: {str(e)}", start_time)
+
+    async def _process_topic_pipeline(
+        self,
+        topic: Dict[str, Any],
+        text: str,
+        audience_context: str,
+        original_url: str,
+        target_platforms: List[str],
+        context_posts: Dict[str, List[str]]
+    ) -> Dict[str, Any]:
+        """
+        Process a single topic through the complete pipeline sequentially:
+        emotion analysis → content generation → style matching
+        
+        This entire pipeline runs independently for each topic in parallel.
+        
+        Args:
+            topic: Topic dictionary from topic extraction
+            text: Original text
+            audience_context: Audience summary
+            original_url: Original URL
+            target_platforms: List of platforms to generate for
+            context_posts: Context posts for style matching
+            
+        Returns:
+            Dict with processing results for this topic
+        """
+        try:
+            start_time = datetime.now()
+            
+            # Step 3: Emotion analysis for this topic
+            emotion_start = datetime.now()
+            emotion_result = await self._run_emotion_analysis(topic, audience_context)
+            emotion_time = (datetime.now() - emotion_start).total_seconds()
+            
+            if not emotion_result['success']:
+                return {
+                    'success': False,
+                    'topic': topic,
+                    'error': f"Emotion analysis failed: {emotion_result['error']}",
+                    'emotion_time': emotion_time,
+                    'content_time': 0,
+                    'style_time': 0
+                }
+            
+            enhanced_topic = emotion_result['emotion_analysis']
+            logger.info(f"📝 Topic {topic['topic_id']} Emotion: {enhanced_topic['primary_emotion']} - {enhanced_topic['reasoning'][:100]}{'...' if len(enhanced_topic['reasoning']) > 100 else ''}")
+            
+            # Step 4-5: Process each platform sequentially (since content gen → style matching are dependent)
+            # But we can still parallelize across platforms for this topic
+            platform_tasks = []
+            
+            for platform in target_platforms:
+                task = self._process_platform_content(
+                    enhanced_topic=enhanced_topic,
+                    text=text,
+                    original_url=original_url,
+                    audience_context=audience_context,
+                    platform=platform,
+                    context_posts=context_posts.get(platform, [])
+                )
+                platform_tasks.append(task)
+            
+            # Execute all platforms for this topic in parallel
+            platform_results = await asyncio.gather(*platform_tasks, return_exceptions=True)
+            content_time = (datetime.now() - emotion_start).total_seconds() - emotion_time
+            
+            # Process platform results
+            processed_results = []
+            max_style_time = 0
+            
+            for i, result in enumerate(platform_results):
+                if isinstance(result, Exception):
+                    processed_results.append({
+                        'success': False,
+                        'platform': target_platforms[i],
+                        'error': str(result),
+                        'processing_time': 0
+                    })
+                else:
+                    processed_results.append(result)
+                    max_style_time = max(max_style_time, result.get('style_time', 0))
+            
+            total_time = (datetime.now() - start_time).total_seconds()
+            
+            return {
+                'success': True,
+                'topic': topic,
+                'emotion_analysis': enhanced_topic,
+                'platform_results': processed_results,
+                'emotion_time': emotion_time,
+                'content_time': content_time,
+                'style_time': max_style_time,
+                'total_topic_time': total_time
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'topic': topic,
+                'error': str(e),
+                'emotion_time': 0,
+                'content_time': 0,
+                'style_time': 0
+            }
+
+    async def _run_emotion_analysis(self, topic: Dict[str, Any], audience_context: str) -> Dict[str, Any]:
+        """Run emotion analysis for a single topic in thread pool"""
+        try:
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                emotion_result = await loop.run_in_executor(
+                    executor,
+                    self.emotion_analyzer.analyze_emotions,
+                    [topic],  # Pass as list since the method expects a list
+                    audience_context
+                )
+            
+            if emotion_result['success'] and emotion_result['emotion_analysis']:
+                return {
+                    'success': True,
+                    'emotion_analysis': emotion_result['emotion_analysis'][0]  # Get first (and only) result
+                }
+            else:
+                return {
+                    'success': False,
+                    'error': emotion_result.get('error', 'Unknown emotion analysis error')
+                }
+                
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f"Emotion analysis execution error: {str(e)}"
+            }
+
+    async def _process_platform_content(
+        self,
+        enhanced_topic: Dict[str, Any],
+        text: str,
+        original_url: str,
+        audience_context: str,
+        platform: str,
+        context_posts: List[str]
+    ) -> Dict[str, Any]:
+        """
+        Process content generation and style matching for a single platform
+        """
+        try:
+            # Step 4: Content generation
+            content_result = await self._run_content_generation(
+                enhanced_topic, text, original_url, platform, audience_context
             )
-    
+            
+            if not content_result['success']:
+                return {
+                    'success': False,
+                    'platform': platform,
+                    'error': f"Content generation failed: {content_result['error']}",
+                    'processing_time': content_result.get('processing_time', 0),
+                    'style_time': 0
+                }
+            
+            generated_content = content_result['final_post']
+            content_processing_time = content_result['processing_time']
+            
+            # Step 5: Style matching
+            style_start = datetime.now()
+            style_result = await self._run_style_matching(
+                generated_content, context_posts, platform
+            )
+            style_time = (datetime.now() - style_start).total_seconds()
+            
+            final_content = generated_content  # Default to original content
+            style_matched = False
+            
+            if style_result['success'] and not style_result.get('skipped', False):
+                final_content = style_result['final_content']
+                style_matched = True
+                logger.info(f"✅ Style matching applied for {platform} on topic {enhanced_topic['topic_id']}")
+            elif style_result.get('skipped', False):
+                logger.info(f"⏭️ Style matching skipped for {platform} on topic {enhanced_topic['topic_id']} (no context posts)")
+            else:
+                logger.warning(f"⚠️ Style matching failed for {platform} on topic {enhanced_topic['topic_id']}: {style_result.get('error', 'Unknown error')}")
+            
+            return {
+                'success': True,
+                'platform': platform,
+                'final_post': final_content,
+                'content_strategy': content_result['content_strategy'],
+                'processing_time': content_processing_time + style_time,
+                'style_time': style_time,
+                'style_matched': style_matched
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'platform': platform,
+                'error': str(e),
+                'processing_time': 0,
+                'style_time': 0
+            }
+
+    async def _run_content_generation(
+        self,
+        enhanced_topic: Dict[str, Any],
+        text: str,
+        original_url: str,
+        platform: str,
+        audience_context: str
+    ) -> Dict[str, Any]:
+        """Run content generation for a single topic/platform in thread pool"""
+        try:
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                content_result = await loop.run_in_executor(
+                    executor,
+                    self.content_generator.generate_content_for_topic,
+                    enhanced_topic,
+                    text,
+                    original_url,
+                    platform,
+                    audience_context
+                )
+            
+            return content_result
+                
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f"Content generation execution error: {str(e)}",
+                'processing_time': 0
+            }
+
+    async def _run_style_matching(
+        self,
+        content: str,
+        context_posts: List[str],
+        platform: str
+    ) -> Dict[str, Any]:
+        """Run style matching for content in thread pool"""
+        try:
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                style_result = await loop.run_in_executor(
+                    executor,
+                    self.style_matcher.match_style,
+                    content,
+                    context_posts,
+                    platform,
+                    240  # Default target length
+                )
+            
+            return style_result
+                
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f"Style matching execution error: {str(e)}",
+                'skipped': False
+            }
+
     def _create_error_response(self, error_message: str, start_time: datetime) -> Dict[str, Any]:
         """Create standardized error response"""
         end_time = datetime.now()

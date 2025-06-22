@@ -223,10 +223,7 @@ CRITICAL CHARACTER LIMIT REQUIREMENTS:
 - PRIORITIZE BREVITY over elaboration - this is Twitter, not an essay
 
 </prompt>
-
-<structure>
-[place the content here]
-</structure>"""
+"""
 
         elif strategy == "professional_post":
             return base_context + f"""
@@ -258,10 +255,7 @@ ABSOLUTE REQUIREMENTS:
 - Style: Professional, insightful, and thought-provoking
 
 </prompt>
-
-<structure>
-[place the content here]
-</structure>"""
+"""
 
         else:
             # Fallback for unknown strategies
@@ -278,10 +272,7 @@ ABSOLUTE REQUIREMENTS:
 - Tone: {config.tone_guidelines}
 
 </prompt>
-
-<structure>
-[place the content here]
-</structure>"""
+"""
     
     def _formatting_node(self, state: ContentGenerationState) -> ContentGenerationState:
         """Format the final post with integrated content+CTA and URL"""
