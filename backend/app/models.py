@@ -63,7 +63,7 @@ class ContentGenerationResponse(BaseModel):
 class ContentPipelineRequest(BaseModel):
     """Request for the unified content processing pipeline"""
     text: str = Field(..., description="The original text to process")
-    original_url: str = Field(..., description="URL of the original content")
+    original_url: Optional[str] = Field(None, description="URL of the original content (optional)")
     target_platforms: Optional[List[str]] = Field(
         default=["twitter"], 
         description="Target social media platforms"
