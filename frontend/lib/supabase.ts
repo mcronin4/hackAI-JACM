@@ -5,10 +5,10 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-// Types for user profile
+// Types for user profile - matches the expanded user_info table structure
 export interface UserProfile {
-  id: string
-  email: string
+  id: string // maps to user_id
+  email: string | null
   username: string | null
   full_name: string | null
   avatar_url: string | null
@@ -17,6 +17,8 @@ export interface UserProfile {
   x_user_id: string | null
   x_screen_name: string | null
   x_profile_image_url: string | null
+  x_handle: string | null
+  linkedin_handle: string | null
   created_at: string
-  updated_at: string
+  updated_at: string | null
 } 

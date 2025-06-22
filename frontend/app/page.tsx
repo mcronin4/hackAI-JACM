@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ArrowRight, Loader2, CheckCircle, X, Send, Copy, FileText, Youtube, Video, FileText as Transcript } from 'lucide-react';
 import { useAuthStore } from '@/lib/auth-store';
 import { ProfileDropdown } from '@/components/ProfileDropdown';
+import { useSearchParams } from 'next/navigation';
 
 // X.com Logo Component
 const XLogo = ({ className }: { className?: string }) => (
@@ -21,7 +22,8 @@ const extractYouTubeId = (url: string): string | null => {
 };
 
 function App() {
-  const { user, isLoggedIn, isLoading, loginWithX, logout } = useAuthStore();
+  const { user, isLoggedIn, isLoading, loginWithX, logout, checkAuthStatus, resetAuthState } = useAuthStore();
+  const searchParams = useSearchParams();
   const [content, setContent] = useState('');
   const [contentType, setContentType] = useState<'text' | 'youtube'>('text');
   const [youtubeViewType, setYoutubeViewType] = useState<'video' | 'transcript'>('video');
@@ -39,6 +41,21 @@ function App() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const youtubeInputRef = useRef<HTMLInputElement>(null);
+
+  // Check authentication status on component mount
+  useEffect(() => {
+    checkAuthStatus();
+  }, [checkAuthStatus]);
+
+  // Handle auth errors from URL parameters
+  useEffect(() => {
+    const error = searchParams.get('error');
+    if (error) {
+      console.error('Authentication error:', error);
+      // You can add a toast notification here if you want
+      // For now, we'll just log it
+    }
+  }, [searchParams]);
 
   const sampleContentBlocks = [
     "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",

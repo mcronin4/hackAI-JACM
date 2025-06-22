@@ -41,10 +41,10 @@ export function ProfileDropdown({ user, isLoading, onLogout }: ProfileDropdownPr
         disabled={isLoading}
         className="w-10 h-10 rounded-full overflow-hidden border-2 border-gray-200 hover:border-gray-300 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
       >
-        {user?.x_profile_image_url ? (
+        {user?.avatar_url || user?.x_profile_image_url ? (
           <img
-            src={user.x_profile_image_url}
-            alt={user.x_screen_name || 'Profile'}
+            src={user.avatar_url || user.x_profile_image_url}
+            alt={user.x_handle || user.full_name || 'Profile'}
             className="w-full h-full object-cover"
           />
         ) : (
@@ -61,10 +61,10 @@ export function ProfileDropdown({ user, isLoading, onLogout }: ProfileDropdownPr
           <div className="px-4 py-3 border-b border-gray-100">
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 rounded-full overflow-hidden">
-                {user?.x_profile_image_url ? (
+                {user?.avatar_url || user?.x_profile_image_url ? (
                   <img
-                    src={user.x_profile_image_url}
-                    alt={user.x_screen_name || 'Profile'}
+                    src={user.avatar_url || user.x_profile_image_url}
+                    alt={user.x_handle || user.full_name || 'Profile'}
                     className="w-full h-full object-cover"
                   />
                 ) : (
@@ -75,10 +75,10 @@ export function ProfileDropdown({ user, isLoading, onLogout }: ProfileDropdownPr
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-gray-900 truncate">
-                  {user?.full_name || user?.username || 'User'}
+                  {user?.full_name || user?.email || 'User'}
                 </p>
                 <p className="text-sm text-gray-500 truncate">
-                  @{user?.x_screen_name || 'username'}
+                  @{user?.x_handle || 'username'}
                 </p>
               </div>
             </div>
