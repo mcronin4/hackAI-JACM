@@ -50,16 +50,17 @@ class ContentPipelineService:
     async def process_content(
         self,
         text: str,
-        original_url: str,
         context_posts: Dict[str, List[str]], # This maps platform to a list of posts gotten from the database and used for style matching
-        target_platforms: Optional[List[str]] = None
+        target_platforms: Optional[List[str]] = None,
+        original_url: Optional[str] = None
+
     ) -> Dict[str, Any]:
         """
         Process text through the complete pipeline: extract audience → extract topics → analyze emotions → generate content → style matching
         
         Args:
             text: The original text to process
-            original_url: URL of the original content
+            original_url: URL of the original content (optional)
             context_posts: Context posts for style matching (final stage)
             target_platforms: List of target platforms (default: ["twitter"])
             
@@ -73,8 +74,9 @@ class ContentPipelineService:
             if not text or not text.strip():
                 return self._create_error_response("Text cannot be empty", start_time)
             
-            if not original_url or not original_url.strip():
-                return self._create_error_response("Original URL cannot be empty", start_time)
+            # Use empty string as default if no URL provided
+            if not original_url:
+                original_url = ""
             
             if target_platforms is None:
                 target_platforms = ["twitter"]
@@ -134,10 +136,19 @@ class ContentPipelineService:
                 logger.info(f"📝 Topic {i} Emotion: {enhanced_topic['primary_emotion']} - {enhanced_topic['reasoning'][:100]}{'...' if len(enhanced_topic['reasoning']) > 100 else ''}")
             
             # Step 4: Generate content for each enhanced topic and platform
-            generated_posts = []
+            platform_posts = {}  # Organize posts by platform
             successful_generations = 0
             failed_generations = []
             content_generation_time = 0
+
+            
+            # Initialize platform_posts structure
+            for platform in target_platforms:
+                platform_posts[platform] = []
+            
+            # Initialize platform_posts structure
+            for platform in target_platforms:
+                platform_posts[platform] = []
             
             for enhanced_topic in emotion_result['emotion_analysis']:
                 for platform in target_platforms:
@@ -151,7 +162,16 @@ class ContentPipelineService:
                         )
                         
                         if content_result['success']:
-                            generated_posts.append(content_result['final_post'])
+                            # Store post with metadata for each platform
+                            post_data = {
+                                'post_content': content_result['final_post'],
+                                'topic_id': enhanced_topic['topic_id'],
+                                'topic_name': enhanced_topic['topic_name'],
+                                'primary_emotion': enhanced_topic['primary_emotion'],
+                                'content_strategy': content_result['content_strategy'],
+                                'processing_time': content_result['processing_time']
+                            }
+                            platform_posts[platform].append(post_data)
                             successful_generations += 1
                             content_generation_time += content_result['processing_time']
                         else:
@@ -173,56 +193,62 @@ class ContentPipelineService:
                 )
             
             logger.info(f"✅ Step 4/5 - Content generation completed in {content_generation_time:.2f}s, generated {successful_generations} posts")
-            for i, post in enumerate(generated_posts, 1):
-                logger.info(f"📝 Generated Post {i}: {post[:150]}{'...' if len(post) > 150 else ''}")
+            for platform, posts in platform_posts.items():
+                for i, post in enumerate(posts, 1):
+                    logger.info(f"📝 Generated Post {i} on {platform}: {post['post_content'][:150]}{'...' if len(post['post_content']) > 150 else ''}")
             
             # Step 5: Apply style matching to each generated post
-            final_posts = []
+            final_posts = {}  # Organize posts by platform
             style_matching_time = 0
             style_matching_failures = []
-            
-            for i, post in enumerate(generated_posts):
-                # Extract content before URL for style matching
-                post_parts = post.rsplit(' ', 1)  # Split on last space
-                if len(post_parts) == 2 and post_parts[1].startswith('http'):
-                    content_only = post_parts[0]
-                    url_part = post_parts[1]
-                else:
-                    content_only = post
-                    url_part = ""
-                
-                # Apply style matching for each platform
-                platform = target_platforms[i % len(target_platforms)]
-                platform_context_posts = context_posts.get(platform, [])
-                
-                try:
-                    style_result = await self.style_matcher.match_style(
-                        original_content=content_only,
-                        context_posts=platform_context_posts,
-                        platform=platform,
-                        target_length=240  # Reserve space for URL
-                    )
-                    
-                    if style_result['success']:
-                        # Reconstruct final post with style-matched content + URL
-                        if url_part:
-                            final_post = f"{style_result['final_content']} {url_part}"
-                        else:
-                            final_post = style_result['final_content']
-                        final_posts.append(final_post)
-                        style_matching_time += style_result['processing_time']
+
+            # Initialize final_posts structure
+            for platform in target_platforms:
+                final_posts[platform] = []
+
+            for platform, posts in platform_posts.items():      
+                for i, post in enumerate(posts):
+                    # Extract content before URL for style matching
+                    post_parts = post.rsplit(' ', 1)  # Split on last space
+                    if len(post_parts) == 2 and post_parts[1].startswith('http'):
+                        content_only = post_parts[0]
+                        url_part = post_parts[1]
                     else:
+                        content_only = post
+                        url_part = ""
+                    
+                    # Apply style matching for each platform
+                    platform = target_platforms[i % len(target_platforms)]
+                    platform_context_posts = context_posts.get(platform, [])
+                    
+                    try:
+                        style_result = await self.style_matcher.match_style(
+                            original_content=content_only,
+                            context_posts=platform_context_posts,
+                            platform=platform,
+                            target_length=240  # Reserve space for URL
+                        )
+                        
+                        if style_result['success']:
+                            # Reconstruct final post with style-matched content + URL
+                            if url_part:
+                                final_post = f"{style_result['final_content']} {url_part}"
+                            else:
+                                final_post = style_result['final_content']
+                            final_posts[platform].append(final_post)
+                            style_matching_time += style_result['processing_time']
+                        else:
+                            # If style matching fails, fall back to original
+                            final_posts[platform].append(post)
+                            style_matching_failures.append(f"Post {i+1}: {style_result['error']}")
+                    
+                    except Exception as e:
                         # If style matching fails, fall back to original
                         final_posts.append(post)
-                        style_matching_failures.append(f"Post {i+1}: {style_result['error']}")
-                
-                except Exception as e:
-                    # If style matching fails, fall back to original
-                    final_posts.append(post)
-                    style_matching_failures.append(f"Post {i+1}: {str(e)}")
-            
+                        style_matching_failures.append(f"Post {i+1}: {str(e)}")
+
             # Log style matching results
-            posts_processed = len(generated_posts)
+            posts_processed = len(final_posts)
             posts_with_failures = len(style_matching_failures)
             posts_successfully_matched = posts_processed - posts_with_failures
             logger.info(f"✅ Step 5/5 - Style matching completed in {style_matching_time:.2f}s, {posts_successfully_matched}/{posts_processed} posts processed successfully")
@@ -264,7 +290,8 @@ class ContentPipelineService:
         return {
             'success': False,
             'error': error_message,
-            'generated_posts': [],
+            'platform_posts': {},  # NEW: Empty platform posts structure
+            'generated_posts': [],  # LEGACY: Empty list for backwards compatibility
             'total_topics': 0,
             'successful_generations': 0,
             'processing_time': processing_time

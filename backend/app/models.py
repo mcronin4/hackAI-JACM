@@ -63,19 +63,35 @@ class ContentGenerationResponse(BaseModel):
 class ContentPipelineRequest(BaseModel):
     """Request for the unified content processing pipeline"""
     text: str = Field(..., description="The original text to process")
-    original_url: str = Field(..., description="URL of the original content")
+    original_url: Optional[str] = Field(None, description="URL of the original content (optional)")
     user_id: Optional[str] = Field(None, description="User ID for context posts (optional)")
     target_platforms: Optional[List[str]] = Field(
         default=["twitter"], 
         description="Target social media platforms"
     )
-    user_id: Optional[str] = Field(None, description="User ID")
+
+
+class PlatformPost(BaseModel):
+    """Individual post for a specific platform"""
+    post_content: str = Field(..., description="The generated post content")
+    topic_id: int = Field(..., description="ID of the topic this post was generated for")
+    topic_name: str = Field(..., description="Name of the topic")
+    primary_emotion: str = Field(..., description="Primary emotion for this topic")
+    content_strategy: str = Field(..., description="Content strategy used (e.g., single_tweet, professional_post)")
+    processing_time: float = Field(..., description="Time taken to generate this post")
+
+
+class PlatformPosts(BaseModel):
+    """Posts organized by platform"""
+    twitter: List[PlatformPost] = Field(default=[], description="Twitter posts")
+    linkedin: List[PlatformPost] = Field(default=[], description="LinkedIn posts")
 
 
 class ContentPipelineResponse(BaseModel):
     """Response from the unified content processing pipeline"""
     success: bool = Field(..., description="Whether the pipeline processing was successful")
-    generated_posts: List[str] = Field(..., description="List of generated social media posts")
+    platform_posts: PlatformPosts = Field(..., description="Posts organized by platform")
+    generated_posts: List[str] = Field(..., description="List of generated social media posts (legacy compatibility)")
     total_topics: int = Field(..., description="Number of topics that were processed")
     successful_generations: int = Field(..., description="Number of successful content generations")
     processing_time: float = Field(..., description="Total processing time in seconds")
