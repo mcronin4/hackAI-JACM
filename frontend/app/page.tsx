@@ -4,6 +4,7 @@ import { ArrowRight, Loader2, CheckCircle, X, Send, Copy, FileText, Youtube, Vid
 import { useAuthStore } from '@/lib/auth-store';
 import { ProfileDropdown } from '@/components/ProfileDropdown';
 import { useSearchParams } from 'next/navigation';
+import AuthModal from '@/components/auth/AuthModal';
 
 // X.com Logo Component
 const XLogo = ({ className }: { className?: string }) => (
@@ -22,7 +23,7 @@ const extractYouTubeId = (url: string): string | null => {
 };
 
 function App() {
-  const { user, isLoggedIn, isLoading, loginWithX, logout, checkAuthStatus, resetAuthState } = useAuthStore();
+  const { user, isLoggedIn, isLoading, logout, checkAuthStatus, resetAuthState } = useAuthStore();
   const searchParams = useSearchParams();
   const [content, setContent] = useState('');
   const [contentType, setContentType] = useState<'text' | 'youtube'>('text');
@@ -42,6 +43,7 @@ function App() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const youtubeInputRef = useRef<HTMLInputElement>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
   // Check authentication status on component mount
   useEffect(() => {
@@ -57,8 +59,6 @@ function App() {
       // For now, we'll just log it
     }
   }, [searchParams]);
-
-
 
   // Handle escape key to close expanded post
   useEffect(() => {
@@ -368,24 +368,18 @@ function App() {
           />
         ) : (
           <button 
-            onClick={loginWithX}
-            disabled={isLoading}
-            className="bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition-all transform hover:scale-105 flex items-center gap-2 text-sm font-semibold shadow-lg"
+            onClick={() => setIsAuthModalOpen(true)}
+            className="bg-gradient-to-r from-teal-600 to-teal-400 text-white px-4 py-2 rounded-lg hover:from-teal-500 hover:to-teal-300 transition-all transform hover:scale-105 flex items-center gap-2 text-sm font-semibold shadow-lg"
           >
-            {isLoading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Connecting...
-              </>
-            ) : (
-              <>
-                <XLogo className="w-4 h-4" />
-                Login with X
-              </>
-            )}
+            Sign Up / Login
           </button>
         )}
       </div>
+
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+      />
 
       <div className="flex flex-1 min-h-0">
         {/* Content Section */}
