@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowRight, Loader2, CheckCircle, X, Send, Copy, FileText, Youtube, Video, FileText as Transcript } from 'lucide-react';
+import { ArrowRight, Loader2, CheckCircle, X, Send, Copy } from 'lucide-react';
 
 // X.com Logo Component
 const XLogo = ({ className }: { className?: string }) => (
@@ -11,31 +11,18 @@ const XLogo = ({ className }: { className?: string }) => (
 
 const API_URL = 'http://localhost:8000';
 
-// Function to extract YouTube video ID from URL
-const extractYouTubeId = (url: string): string | null => {
-  const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
-  const match = url.match(regex);
-  return match ? match[1] : null;
-};
-
 function App() {
   const [content, setContent] = useState('');
-  const [contentType, setContentType] = useState<'text' | 'youtube'>('text');
-  const [youtubeViewType, setYoutubeViewType] = useState<'video' | 'transcript'>('video');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
-  const [isTranscriptLoading, setIsTranscriptLoading] = useState(false);
   const [contentBlocks, setContentBlocks] = useState<string[]>([]);
   const [expandedPost, setExpandedPost] = useState<number | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isStarted, setIsStarted] = useState(false);
   const [editingContent, setEditingContent] = useState('');
   const [copySuccess, setCopySuccess] = useState(false);
-  const [isContentTransitioning, setIsContentTransitioning] = useState(false);
-  const [isYoutubeViewTransitioning, setIsYoutubeViewTransitioning] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const youtubeInputRef = useRef<HTMLInputElement>(null);
 
   const sampleContentBlocks = [
     "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
@@ -51,17 +38,6 @@ function App() {
     "Temporibus autem quibusdam et aut officiis debitis aut rerum necessitatibus saepe eveniet ut et voluptates repudiandae. Itaque earum rerum hic tenetur a sapiente delectus, ut aut reiciendis voluptatibus maiores alias consequatur aut perferendis doloribus asperiores repellat.",
     "Itaque earum rerum hic tenetur a sapiente delectus, ut aut reiciendis voluptatibus maiores alias consequatur aut perferendis. Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis."
   ];
-
-  // Sample transcript text for YouTube videos
-  const sampleTranscript = `Welcome to this comprehensive guide on artificial intelligence and machine learning. In today's rapidly evolving technological landscape, understanding these concepts has become more crucial than ever before.
-
-Artificial intelligence, commonly referred to as AI, represents a broad field of computer science focused on creating systems capable of performing tasks that typically require human intelligence. These tasks include learning, reasoning, problem-solving, perception, and language understanding.
-
-Machine learning, a subset of AI, involves the development of algorithms and statistical models that enable computer systems to improve their performance on a specific task through experience, without being explicitly programmed for every scenario.
-
-The applications of AI and machine learning are vast and continue to expand across various industries. From healthcare and finance to transportation and entertainment, these technologies are revolutionizing how we work, live, and interact with the world around us.
-
-As we delve deeper into this topic, we'll explore the fundamental concepts, practical applications, and future implications of these transformative technologies. Whether you're a beginner looking to understand the basics or a professional seeking to enhance your knowledge, this guide will provide valuable insights into the world of artificial intelligence and machine learning.`;
 
   // Handle escape key to close expanded post
   useEffect(() => {
@@ -85,25 +61,14 @@ As we delve deeper into this topic, we'll explore the fundamental concepts, prac
     }
   }, [editingContent]);
 
-  // Clear content when switching content type with fade transition
-  useEffect(() => {
-    if (content.trim()) {
-      setIsContentTransitioning(true);
-      setTimeout(() => {
-        setContent('');
-        setIsContentTransitioning(false);
-      }, 150);
-    }
-  }, [contentType]);
-
-  // Helper function to start post generation (used after transcript is ready)
-  const startPostGeneration = () => {
+  const handleStart = () => {
+    setIsStarted(true);
     setIsProcessing(true);
     setContentBlocks([]);
 
     const body = {
       text: content,
-      original_url: contentType === 'youtube' ? content : 'https://example.com/ai-article',
+      original_url: 'https://example.com/ai-article',
       max_topics: 5,
       target_platforms: ['twitter']
     };
@@ -144,43 +109,6 @@ As we delve deeper into this topic, we'll explore the fundamental concepts, prac
     addBlocksGradually();
   };
 
-  const handleStart = () => {
-    setIsStarted(true);
-
-    if (contentType === 'youtube') {
-      // For YouTube content, first load transcript (5 seconds), then start post generation
-      setIsTranscriptLoading(true);
-      
-      // Simulate transcript loading for 5 seconds
-      setTimeout(() => {
-        setIsTranscriptLoading(false);
-        // After transcript is loaded, start post generation
-        startPostGeneration();
-      }, 5000);
-    } else {
-      // For text content, start post generation immediately
-      startPostGeneration();
-    }
-  };
-
-  const handleReset = () => {
-    // Reset all state to initial values
-    setContent('');
-    setContentType('text');
-    setYoutubeViewType('video');
-    setIsProcessing(false);
-    setIsComplete(false);
-    setIsTranscriptLoading(false);
-    setContentBlocks([]);
-    setExpandedPost(null);
-    setIsTransitioning(false);
-    setIsStarted(false);
-    setEditingContent('');
-    setCopySuccess(false);
-    setIsContentTransitioning(false);
-    setIsYoutubeViewTransitioning(false);
-  };
-
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setContent(e.target.value);
     
@@ -191,40 +119,6 @@ As we delve deeper into this topic, we'll explore the fundamental concepts, prac
         textareaRef.current.scrollTop = 0;
       }
     }, 0);
-  };
-
-  const handleYouTubeInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setContent(e.target.value);
-  };
-
-  const handleContentTypeChange = (newType: 'text' | 'youtube') => {
-    if (newType !== contentType) {
-      setIsContentTransitioning(true);
-      setTimeout(() => {
-        setContentType(newType);
-        setTimeout(() => {
-          setIsContentTransitioning(false);
-          // Focus the appropriate input field after transition completes
-          if (newType === 'text') {
-            textareaRef.current?.focus();
-          } else if (newType === 'youtube') {
-            youtubeInputRef.current?.focus();
-          }
-        }, 50);
-      }, 150);
-    }
-  };
-
-  const handleYoutubeViewTypeChange = (newViewType: 'video' | 'transcript') => {
-    if (newViewType !== youtubeViewType) {
-      setIsYoutubeViewTransitioning(true);
-      setTimeout(() => {
-        setYoutubeViewType(newViewType);
-        setTimeout(() => {
-          setIsYoutubeViewTransitioning(false);
-        }, 50);
-      }, 150);
-    }
   };
 
   const handlePostClick = (index: number) => {
@@ -276,55 +170,30 @@ As we delve deeper into this topic, we'll explore the fundamental concepts, prac
    
   };
 
-  const getPlaceholderText = () => {
-    return contentType === 'text' 
-      ? 'Paste your content here...' 
-      : 'Paste YouTube link here...';
-  };
-
-  // Get YouTube video ID for embedding
-  const youtubeVideoId = contentType === 'youtube' && content ? extractYouTubeId(content) : null;
-  const hasValidYouTubeUrl = youtubeVideoId !== null;
-
   return (
     <div className="h-screen bg-white p-8 flex flex-col overflow-hidden">
       <div className="flex flex-1 min-h-0">
         {/* Content Section */}
         <div className={`transition-all duration-500 ${isStarted ? 'w-1/2' : 'w-2/3'} flex flex-col min-h-0`}>
-          {/* Header - moves up when YouTube video is present or when started */}
-          <div className={`transition-all duration-500 ${
-            isStarted || (contentType === 'youtube' && hasValidYouTubeUrl)
-              ? 'mb-4' 
-              : 'mt-32 mb-8'
-          } flex-shrink-0`}>
+          <div className={`transition-all duration-500 ${isStarted ? 'mb-4' : 'mt-32 mb-8'} flex-shrink-0`}>
             <div className="flex items-end justify-between mb-8">
-              <div className="flex items-fi">
+              <div className="flex items-center gap-4">
                 <img 
                   src="/chameleon_logo.png" 
                   alt="Chameleon Logo" 
-                  className={`transition-all duration-500 mr-4 ${
-                    isStarted || (contentType === 'youtube' && hasValidYouTubeUrl)
+                  className={`transition-all duration-500 ${
+                    isStarted 
                       ? 'w-8 h-8' 
                       : 'w-16 h-16 md:w-20 md:h-20'
                   }`}
                 />
-                <div className="flex flex-col">
-                  <h1 
-                    onClick={handleReset}
-                    className={`font-bold bg-gradient-to-r from-teal-600 to-teal-400 bg-clip-text text-transparent text-left transition-all duration-500 cursor-pointer hover:from-teal-500 hover:to-teal-300 ${
-                      isStarted || (contentType === 'youtube' && hasValidYouTubeUrl)
-                        ? 'text-lg' 
-                        : 'text-5xl md:text-6xl'
-                    }`}
-                  >
-                    chameleon
-                  </h1>
-                  {!isStarted && !(contentType === 'youtube' && hasValidYouTubeUrl) && (
-                  <p className="text-teal-500 font-bold text-left transition-all duration-500 text-lg mt-2">
-                    adapt your content to any platform
-                  </p>
-                )}
-                </div>
+                <h1 className={`font-bold bg-gradient-to-r from-teal-700 to-green-500 bg-clip-text text-transparent text-left transition-all duration-500 ${
+                  isStarted 
+                    ? 'text-lg' 
+                    : 'text-5xl md:text-6xl'
+                }`}>
+                  chameleon
+                </h1>
               </div>
               
               {content.trim() && !isStarted && (
@@ -339,176 +208,21 @@ As we delve deeper into this topic, we'll explore the fundamental concepts, prac
             </div>
           </div>
           
-          {/* Content Type Toggle - Hide unused option when started */}
-          <div className="mb-3 flex-shrink-0 flex items-center gap-4">
-            <div className="flex bg-gray-100 rounded-md p-0.5 w-fit">
-              {/* Text button - hide when started and contentType is youtube */}
-              {!(isStarted && contentType === 'youtube') && (
-                <button
-                  onClick={() => handleContentTypeChange('text')}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
-                    contentType === 'text'
-                      ? 'bg-white text-teal-600 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-800'
-                  }`}
-                  disabled={isProcessing || isComplete}
-                >
-                  <FileText className="w-3 h-3" />
-                  Text
-                </button>
-              )}
-              
-              {/* YouTube button - hide when started and contentType is text */}
-              {!(isStarted && contentType === 'text') && (
-                <button
-                  onClick={() => handleContentTypeChange('youtube')}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
-                    contentType === 'youtube'
-                      ? 'bg-white text-red-600 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-800'
-                  }`}
-                  disabled={isProcessing || isComplete}
-                >
-                  <Youtube className="w-3 h-3" />
-                  YouTube Link
-                </button>
-              )}
-            </div>
-
-            {/* Video/Transcript Toggle - Only show when YouTube is selected, started, and has valid URL */}
-            {isStarted && contentType === 'youtube' && hasValidYouTubeUrl && (
-              <div className="flex bg-gray-100 rounded-md p-0.5 w-fit">
-                <button
-                  onClick={() => handleYoutubeViewTypeChange('video')}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
-                    youtubeViewType === 'video'
-                      ? 'bg-white text-blue-600 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-800'
-                  }`}
-                  disabled={isTranscriptLoading}
-                >
-                  <Video className="w-3 h-3" />
-                  Video
-                </button>
-                <button
-                  onClick={() => handleYoutubeViewTypeChange('transcript')}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all ${
-                    youtubeViewType === 'transcript'
-                      ? 'bg-white text-purple-600 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-800'
-                  }`}
-                  disabled={isTranscriptLoading}
-                >
-                  <Transcript className="w-3 h-3" />
-                  Transcript
-                </button>
-              </div>
-            )}
-          </div>
-          
-          {/* Content Input Area with fade transitions */}
-          <div className="flex-1 min-h-0 flex flex-col relative">
-            {contentType === 'text' ? (
-              <textarea
-                ref={textareaRef}
-                value={content}
-                onChange={handleContentChange}
-                placeholder={getPlaceholderText()}
-                className={`w-full flex-1 min-h-0 p-6 rounded-lg resize-none focus:outline-none shadow-lg text-sm leading-relaxed text-left bg-white text-black transition-all duration-300 ${
-                  isContentTransitioning ? 'opacity-0' : 'opacity-100'
-                }`}
-                disabled={isProcessing || isComplete}
-              />
-            ) : (
-              <div className={`flex-1 min-h-0 flex flex-col transition-all duration-300 ${
-                isContentTransitioning ? 'opacity-0' : 'opacity-100'
-              }`}>
-                {/* YouTube URL Input */}
-                <input
-                  ref={youtubeInputRef}
-                  type="text"
-                  value={content}
-                  onChange={handleYouTubeInputChange}
-                  placeholder={getPlaceholderText()}
-                  className="w-full p-4 rounded-lg focus:outline-none shadow-lg text-sm bg-white text-black flex-shrink-0 h-16"
-                  disabled={isProcessing || isComplete}
-                />
-                
-                {/* YouTube Content Area - Video or Transcript */}
-                {hasValidYouTubeUrl && (
-                  <div className="flex-1 min-h-0 mt-4 relative">
-                    {/* Video View */}
-                    {youtubeViewType === 'video' && (
-                      <div className={`absolute inset-0 bg-gray-100 rounded-lg overflow-hidden shadow-lg transition-all duration-300 ${
-                        isYoutubeViewTransitioning ? 'opacity-0' : 'opacity-100'
-                      }`}>
-                        <iframe
-                          src={`https://www.youtube.com/embed/${youtubeVideoId}`}
-                          title="YouTube video player"
-                          frameBorder="0"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                          allowFullScreen
-                          className="w-full h-full"
-                        />
-                      </div>
-                    )}
-                    
-                    {/* Transcript View */}
-                    {youtubeViewType === 'transcript' && (
-                      <div className={`absolute inset-0 bg-white rounded-lg shadow-lg overflow-hidden transition-all duration-300 relative ${
-                        isYoutubeViewTransitioning ? 'opacity-0' : 'opacity-100'
-                      }`}>
-                        {/* Transcript Loading Overlay */}
-                        {isTranscriptLoading && (
-                          <div className="absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center z-10 rounded-lg">
-                            <div className="flex flex-col items-center gap-3">
-                              <Loader2 className="w-8 h-8 text-teal-500 animate-spin" />
-                              <p className="text-sm text-gray-600">Loading transcript...</p>
-                            </div>
-                          </div>
-                        )}
-                        
-                        {/* Transcript Content */}
-                        <div className={`h-full p-6 overflow-y-auto transition-all duration-300 ${
-                          isTranscriptLoading ? 'opacity-50 pointer-events-none' : 'opacity-100'
-                        }`}>
-                          <div className="text-sm leading-relaxed text-gray-700 whitespace-pre-line">
-                            {sampleTranscript}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-                
-                {/* Invalid URL message */}
-                {contentType === 'youtube' && content && !hasValidYouTubeUrl && (
-                  <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-                    <p className="text-sm text-red-600">
-                      Please enter a valid YouTube URL
-                    </p>
-                    <p className="text-xs text-red-400 mt-1">
-                      Supported formats: youtube.com/watch?v=... or youtu.be/...
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+          <textarea
+            ref={textareaRef}
+            value={content}
+            onChange={handleContentChange}
+            placeholder="Paste your content here..."
+            className="w-full flex-1 min-h-0 p-6 rounded-lg resize-none focus:outline-none shadow-lg text-sm leading-relaxed text-left bg-white text-black"
+            disabled={isProcessing || isComplete}
+          />
         </div>
 
         {/* Processing/Complete Section */}
         {isStarted && (
           <div className="w-1/2 p-8 flex flex-col min-h-0">
             <div className="text-center mb-6 flex-shrink-0">
-              {isTranscriptLoading ? (
-                <>
-                  <div className="w-12 h-12 mx-auto mb-3 bg-purple-50 rounded-full flex items-center justify-center">
-                    <Loader2 className="w-6 h-6 text-purple-500 animate-spin" />
-                  </div>
-                  <p className="text-purple-600 text-xs">Loading transcript...</p>
-                </>
-              ) : isProcessing ? (
+              {isProcessing ? (
                 <>
                   <div className="w-12 h-12 mx-auto mb-3 bg-teal-50 rounded-full flex items-center justify-center">
                     <Loader2 className="w-6 h-6 text-teal-500 animate-spin" />
